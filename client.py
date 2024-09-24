@@ -25,9 +25,9 @@ def send_messages(client_socket):
             recipient, *msg = message[5:].split()
             private_message = f"PRIVATE {recipient} {' '.join(msg)}"
             client_socket.send(private_message.encode('utf-8'))
-        elif message.startswith('/join '):  # join channel command
+        elif message.startswith('/join '): # join channel command
             client_socket.send(message.encode('utf-8'))
-        elif message == "/list":  # channel list command
+        elif message == "/list": # channel list command
             client_socket.send(message.encode('utf-8'))
         else:
             client_socket.send(message.encode('utf-8'))

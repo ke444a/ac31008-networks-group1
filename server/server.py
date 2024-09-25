@@ -5,7 +5,6 @@ from utils import Channel, User
 HOST = 'localhost'
 PORT = 6667
 
-
 class Server:
     def __init__(self, host: str = HOST, port: int = PORT):
         self.host = host
@@ -28,7 +27,6 @@ class Server:
         self.handle_client(client_socket)
     
     def handle_client(self, client_socket: socket.socket) -> None:
-        user = None
         while True:
             try:
                 data = client_socket.recv(1024).decode("utf-8").strip()
@@ -36,12 +34,12 @@ class Server:
                     break
                 
                 command, *args = data.split()
-                self.handle_command(command, args, client_socket, user)
+                self.handle_command(command, args, client_socket, self.clients.get(client_socket, None))
             except Exception as e:
                 print(f"Error handling client: {e}")
                 break
         
-        self._cleanup_client(client_socket, user)
+        self._cleanup_client(client_socket, self.clients.get(client_socket, None))
 
     def _cleanup_client(self, client_socket: socket.socket, user: Optional[User]) -> None:
         if user:
@@ -58,6 +56,7 @@ class Server:
             "PRIVMSG": self._handle_send_private_message
         }
         
+        print(command, args)
         handler = command_handlers.get(command)
         if handler:
             handler(args, client_socket, user)
@@ -81,7 +80,15 @@ class Server:
         channel = self.channels.setdefault(channel_name, Channel(channel_name))
         channel.add_client(user)
         user.join_channel(channel)
-        self.send_message_to_client(client_socket, f":server 002 {user.name} :Welcome to {channel_name}")
+        self.send_message_to_client(client_socket, f":{user.name}!{user.name}@{self.host} JOIN {channel_name}")
+    
+        # Send channel topic (if any)
+        self.send_message_to_client(client_socket, f":server 332 {user.name} {channel_name} :Welcome to {channel_name}")
+        
+        # Send list of users in the channel
+        user_list = " ".join([client.name for client in channel.clients])
+        self.send_message_to_client(client_socket, f":server 353 {user.name} = {channel_name} :{user_list}")
+        self.send_message_to_client(client_socket, f":server 366 {user.name} {channel_name} :End of /NAMES list.")
 
     def _handle_leave_channel(self, args: list, client_socket: socket.socket, user: Optional[User]) -> None:
         if not args or not user:

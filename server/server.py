@@ -16,6 +16,7 @@ class Server:
 
     def _create_server_socket(self) -> socket.socket:
         server_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        server_socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
         server_socket.bind((self.host, self.port))
         server_socket.listen()
         return server_socket

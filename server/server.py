@@ -1,6 +1,7 @@
 import socket
 from typing import Dict, Optional
-from utils import Channel, User, ResponseCode, Message
+from utils import Channel, User, ResponseCode
+import threading
 
 HOST = 'localhost'
 PORT = 6667
@@ -24,8 +25,7 @@ class Server:
         client_socket, client_address = self.server_socket.accept()
         print(f"Connection from {client_address} has been established.")
 
-        message = Message(sender="server", receiver="*", message="Welcome to the IRC server", code=ResponseCode.RPL_WELCOME)
-        self.send_message_to_client(client_socket, message)
+        self.send_message_to_client(client_socket, "server", "*", "Welcome to the IRC server", ResponseCode.RPL_WELCOME.value)
         self.handle_client(client_socket)
     
     def handle_client(self, client_socket: socket.socket) -> None:
@@ -62,19 +62,19 @@ class Server:
         if handler:
             handler(args, client_socket, user)
         else:
-            self.send_message_to_client(client_socket, Message(sender="server", receiver=user.name, message=f"Unknown command: {command}", code=ResponseCode.ERR_UNKNOWNCOMMAND))
+            self.send_message_to_client(client_socket, "server", user.name, f"Unknown command: {command}", ResponseCode.ERR_UNKNOWNCOMMAND.value)
 
     def _handle_nickname(self, args: list, client_socket: socket.socket, user: Optional[User]) -> None:
         if not args:
-            self.send_message_to_client(client_socket, Message(sender="server", receiver=user.name, message="NICK command requires a nickname.", code=ResponseCode.ERR_NONICKNAMEGIVEN))
+            self.send_message_to_client(client_socket, "server", user.name, "NICK command requires a nickname.", ResponseCode.ERR_NONICKNAMEGIVEN.value)
             return
         nickname = args[0]
         if nickname in self.clients:
-            self.send_message_to_client(client_socket, Message(sender="server", receiver=user.name, message=f"Nickname {nickname} is already in use.", code=ResponseCode.ERR_NICKNAMEINUSE))
+            self.send_message_to_client(client_socket, "server", user.name, f"Nickname {nickname} is already in use.", ResponseCode.ERR_NICKNAMEINUSE.value)
             return
         user = User(nickname)
         self.clients[client_socket] = user
-        self.send_message_to_client(client_socket, Message(sender="server", receiver=user.name, message=f"Your nickname is set to {nickname}", code=ResponseCode.RPL_WELCOME))
+        self.send_message_to_client(client_socket, "server", user.name, f"Your nickname is set to {nickname}", ResponseCode.RPL_WELCOME.value)
 
     def _handle_join_channel(self, args: list, client_socket: socket.socket, user: Optional[User]) -> None:
         if not args or not user:
@@ -84,7 +84,19 @@ class Server:
         channel = self.channels.setdefault(channel_name, Channel(channel_name))
         channel.add_client(user)
         user.join_channel(channel)
-        self.send_message_to_client(client_socket, Message(sender="server", receiver=user.name, message=f"Welcome to the channel {channel_name}", code=ResponseCode.RPL_WELCOME))
+        self.send_message_to_client(client_socket, "server", user.name, f"Welcome to the channel {channel_name}", ResponseCode.RPL_WELCOME.value)
+        self.send_message_to_client(client_socket, f":{user.name}!{user.name}@{self.host} JOIN {channel_name}")
+    
+        self.send_message_to_client(client_socket, "server", user.name, f"Welcome to the channel {channel_name}", ResponseCode.RPL_WELCOME.value)
+    
+        self.send_message_to_client(client_socket, f"{user.name}!{user.name}@{self.host}", channel_name, "")
+
+        user_list = " ".join([client.name for client in channel.clients])
+        self.send_message_to_client(client_socket, "server", user.name, f"= {channel_name} :{user_list}", ResponseCode.RPL_NAMREPLY.value)
+        
+        # End of names list
+        self.send_message_to_client(client_socket, "server", user.name, f"{channel_name} :End of /NAMES list.", ResponseCode.RPL_ENDOFNAMES.value)
+
 
     def _handle_leave_channel(self, args: list, client_socket: socket.socket, user: Optional[User]) -> None:
         if not args or not user:
@@ -93,11 +105,11 @@ class Server:
         if channel_name in self.channels and user in self.channels[channel_name].clients:
             self.channels[channel_name].remove_client(user)
             user.leave_channel(self.channels[channel_name])
-            self.send_message_to_client(client_socket, Message(sender="server", receiver=user.name, message=f"You have left {channel_name}", code=ResponseCode.RPL_WELCOME))
+            self.send_message_to_client(client_socket, "server", user.name, f"You have left {channel_name}", ResponseCode.RPL_WELCOME.value)
 
     def _handle_send_private_message(self, args: list, client_socket: socket.socket, user: Optional[User]) -> None:
         if len(args) < 2 or not user:
-            self.send_message_to_client(client_socket, Message(sender="server", receiver=user.name, message="PRIVMSG requires a target and message.", code=ResponseCode.ERR_NONICKNAMEGIVEN))
+            self.send_message_to_client(client_socket, "server", user.name, "PRIVMSG requires a target and message.", ResponseCode.ERR_NONICKNAMEGIVEN.value)
             return
         
         target, message = args[0], " ".join(args[1:])
@@ -111,14 +123,14 @@ class Server:
             channel = self.channels[channel_name]
             self.broadcast_message(channel, sender, message)
         else:
-            self.send_message_to_client(self._get_client_socket(sender), Message(sender="server", receiver=sender.name, message=f"Error. Channel {channel_name} does not exist.", code=ResponseCode.ERR_NOSUCHCHANNEL))
+            self.send_message_to_client(self._get_client_socket(sender), "server", sender.name, f"Error. Channel {channel_name} does not exist.", ResponseCode.ERR_NOSUCHCHANNEL.value)
 
     def _send_private_message(self, recipient_name: str, sender: User, message: str) -> None:
         recipient_socket = self._get_user_socket(recipient_name)
         if recipient_socket:
-            self.send_message_to_client(recipient_socket, Message(sender=sender.name, receiver=recipient_name, message=message))
+            self.send_message_to_client(recipient_socket, sender.name, recipient_name, message)
         else:
-            self.send_message_to_client(self._get_client_socket(sender), Message(sender="server", receiver=sender.name, message=f"Error. User {recipient_name} does not exist.", code=ResponseCode.ERR_NOSUCHNICK))
+            self.send_message_to_client(self._get_client_socket(sender), "server", sender.name, f"Error. User {recipient_name} does not exist.", ResponseCode.ERR_NOSUCHNICK.value)
 
     def _get_user_socket(self, username: str) -> Optional[socket.socket]:
         for socket, user in self.clients.items():
@@ -137,11 +149,11 @@ class Server:
             if client != sender:
                 client_socket = self._get_client_socket(client)
                 if client_socket:
-                    self.send_message_to_client(client_socket, Message(sender=sender.name, receiver=client.name, message=message))
+                    self.send_message_to_client(client_socket, sender.name, client.name, message)
                 
-    def send_message_to_client(self, client_socket: socket.socket, msg: Message) -> None:
+    def send_message_to_client(self, client_socket: socket.socket, sender: str, receiver: str, message: str, code: Optional[str] = None) -> None:
         try:
-            message_str = f":{msg.sender}{" " + msg.code if msg.code else ""} {msg.receiver} :{msg.message}\r\n"
+            message_str = f":{sender}{' ' + code if code else ''} {receiver} :{message}\r\n"
             print(f">>> Sending message: {message_str}")
             client_socket.send(message_str.encode("utf-8"))
         except Exception as e:
@@ -151,12 +163,20 @@ class Server:
         print(f"Server started on {self.host}:{self.port}")
         while True:
             try:
-                self.accept_connection()
+                client_socket, client_address = self.server_socket.accept()
+                print(f"Connection from {client_address} has been established.")
+                
+                self.send_message_to_client(client_socket, "server", "*", "Welcome to the IRC server", ResponseCode.RPL_WELCOME.value)
+                
+                client_thread = threading.Thread(target=self.handle_client, args=(client_socket,))
+                client_thread.start()
             except KeyboardInterrupt:
                 print(">>> Server shutting down...")
                 break
             except Exception as e:
                 print(f"### Error in main server loop: {e}")
+        
+        self.close()
     
     def close(self) -> None:
         for client_socket in self.clients.keys():

@@ -6,7 +6,6 @@ import threading
 HOST = 'localhost'
 PORT = 6667
 
-
 class Server:
     def __init__(self, host: str = HOST, port: int = PORT):
         self.host = host
@@ -18,6 +17,7 @@ class Server:
     # Starts the server socket with IPv6
     def create_server_socket(self) -> socket.socket:
         server_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        server_socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
         server_socket.bind((self.host, self.port))
         server_socket.listen()
         return server_socket
@@ -104,7 +104,6 @@ class Server:
         user_list = " ".join([client.name for client in channel.clients])
         self.send_message_to_client(client_socket, f":server {ResponseCode.RPL_NAMREPLY.value} {user.name} {channel.name} :{user_list}")
         self.send_message_to_client(client_socket, f":server {ResponseCode.RPL_ENDOFNAMES.value} {user.name} {channel.name} :End of /NAMES list.")
-
 
     # Handles a client leaving a channel
     def handle_leave_channel(self, args: list, client_socket: socket.socket, user: Optional[User]) -> None:

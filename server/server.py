@@ -143,6 +143,7 @@ class Server:
     def send_channel_message(self, channel_name: str, sender: User, message: str) -> None:
         if channel_name in self.channels:
             channel = self.channels[channel_name]
+            print(f"Broadcasting to channel {channel_name} from {sender.name}: {message}")
             self.broadcast_message(channel, sender, message)
         else:
             self.send_message_to_client(self.get_client_socket(sender), f":server {ResponseCode.ERR_NOSUCHCHANNEL.value} {sender.name} {channel_name} :Error. Channel {channel_name} does not exist.")
@@ -173,7 +174,7 @@ class Server:
             if client != sender:
                 client_socket = self.get_client_socket(client)
                 if client_socket:
-                    self.send_message_to_client(client_socket, f":{sender.name}!{sender.name}@{self.host} PRIVMSG {client.name} :{message}")
+                    self.send_message_to_client(client_socket, f":{sender.name}!{sender.name}@{self.host} PRIVMSG {channel.name} :{message}")
                 
     def send_message_to_client(self, client_socket: socket.socket, message: str) -> None:
         try:

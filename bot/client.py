@@ -31,13 +31,14 @@ class Client:
     def receive_message(self):
         return self.client_socket.recv(1024).decode('utf-8')
     
-    def handle_commands(self, message):
-        sender, content = message.split(":", 1)
-        sender = sender.split("!")[0]
-
+    def handle_commands(self, sender, content):  
         if content.startswith("!hello"):
-            response = f"Hello {sender}!"
-            self.send_message(f"PRIVMSG {CHANNEL} :{response}\r\n")
+            print("testing to see if it is parsing correclty")
+            # Send a private greeting to the user
+            response = f"Hello {sender}! Hope you're doing great!"  
+            self.send_message(f"PRIVMSG {sender} :{response}\r\n")  
+            print(f"Sent private message to {sender}: {response}")
+
         # elif content.startswith("!slap"):
             # determine users in the channel somehow
             # users = []
@@ -62,29 +63,43 @@ class Client:
         self.send_message(f"PRIVMSG {sender} :{random_fact}\r\n")
 
     def receive_private_message(self):
-        while True:
-            try:
-                message = self.receive_message()
-                print(f"Bot received: {message}")  # Debug print
-                if message.startswith("PING"):
-                    pong_reply = f"PONG {message.split()[1]}\r\n"
-                    self.send_message(pong_reply)
-                    print(f"Bot sent: {pong_reply}")  # Debug print
-                elif "PRIVMSG" in message:
-                    parts = message.split()
-                    sender = parts[0].split('!')[0][1:]
-                    target = parts[2]
-                    content = ' '.join(parts[3:])[1:]
-                    
-                    if target == CHANNEL:
-                        if content.startswith("!"):
-                            self.handle_commands(f"{sender}:{content}")
-                    else:
-                        self.respond_to_private_message(sender)
+       while True:
+        try:
+            message = self.receive_message()
+            print(f"Raw message received: {message}")  
+            if message.startswith("PING"):
+                pong_reply = f"PONG {message.split()[1]}\r\n"
+                self.send_message(pong_reply)
+                print(f"Bot sent: {pong_reply}")  
 
-            except Exception as e:
-                print(f"Error receiving message: {e}")
-                break
+            elif "PRIVMSG" in message:
+                parts = message.split()
+
+                if len(parts) < 4:  
+                    print("Message format error: ", parts)
+                    continue
+
+                sender = parts[0].split('!')[0][1:]
+                target = parts[2]
+                content = ' '.join(parts[3:]).lstrip(':') 
+
+                print(f"Target: {target}, Sender: {sender}, Content: {content}")
+
+                if target == CHANNEL:
+                    if sender == BOT_NAME and "RPL_NAMREPLY" in message:
+                        user_list = content.split(":")[-1].strip().split()  
+                        self.users_in_channel = [user for user in user_list if user != BOT_NAME]
+
+                    if content.startswith("!"):
+                        self.handle_commands(sender, content)
+
+                elif target == BOT_NAME:
+                    print(f"Received private message from {sender}: {content}")
+                    self.respond_to_private_message(sender)
+
+        except Exception as e:
+            print(f"Error receiving message: {e}")
+            break
 
     def join_channel_and_announce(self):    
         try:

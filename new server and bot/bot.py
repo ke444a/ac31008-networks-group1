@@ -9,6 +9,9 @@ class IRCBot:
         self.name = name
         self.channel = channel
         self.sock = None
+
+        # jokes are from:
+        # https://www.countryliving.com/life/entertainment/a36178514/hilariously-funny-jokes/
         self.jokes = [
             "Did you hear about the new squirrel diet? It's just nuts.!",
             "I made song about tortilla once, now it's more like a wrap.",
@@ -82,11 +85,11 @@ class IRCBot:
         self.send_message(f"PRIVMSG {sender} :{random_joke}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Simple IRC Bot Client')
-    parser.add_argument('--host', type=str, required=True, help='The server to connect to')
-    parser.add_argument('--port', type=int, required=True, help='The port to connect to')
-    parser.add_argument('--name', type=str, required=True, help='The nickname of the bot')
-    parser.add_argument('--channel', type=str, required=True, help='The channel to join')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--host', type=str, required=True)
+    parser.add_argument('--port', type=int, required=True)
+    parser.add_argument('--name', type=str, required=True)
+    parser.add_argument('--channel', type=str, required=True)
 
     args = parser.parse_args()
 

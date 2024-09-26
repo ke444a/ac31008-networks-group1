@@ -1,7 +1,10 @@
 from enum import Enum
-from typing import Optional
+
+
 class ResponseCode(Enum):
     RPL_WELCOME = "001"
+    RPL_YOURHOST = "002"
+    RPL_MYINFO = "004"
     RPL_NAMREPLY = "353"
     RPL_ENDOFNAMES = "366"
     ERR_NOSUCHNICK = "401"
@@ -11,6 +14,7 @@ class ResponseCode(Enum):
     ERR_NONICKNAMEGIVEN = "431"
     ERR_ERRONEUSNICKNAME = "432"
     ERR_NICKNAMEINUSE = "433"
+
 
 class Channel:
     def __init__(self, name):
@@ -27,18 +31,13 @@ class Channel:
 class User:
     def __init__(self, name):
         self.name = name
-        self.channels = set()
+        # self.channels = set()
 
-    def join_channel(self, channel):
-        self.channels.add(channel)
+    # def join_channel(self, channel):
+    #     self.channels.add(channel)
 
-    def leave_channel(self, channel):
-        self.channels.remove(channel)
-
-class Message:
-    def __init__(self, sender: str, receiver: str, message: str, code: Optional[str] = None):
-        self.sender = sender
-        self.receiver = receiver
-        self.message = message
-        self.code = code
-
+    # def leave_channel(self, channel):
+    #     self.channels.remove(channel)
+    
+    def set_nickname(self, nickname):
+        self.name = nickname

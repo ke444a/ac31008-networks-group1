@@ -41,7 +41,7 @@ def handle_commands(message, client_socket):
         target_user = random.choice(users_in_channel)
         response = f"{sender} slaps {target_user} around a bit with a large trout"
 
-        #client_socket.send(f"PRIVMSG {CHANNEL} :{response}\r\n".encode('utf-8'))
+        client_socket.send(f"PRIVMSG {CHANNEL} :{response}\r\n".encode('utf-8'))
    
 # to respond to a private message with a fun fact
 

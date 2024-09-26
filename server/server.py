@@ -66,8 +66,8 @@ class Server:
         handler = command_handlers.get(command)
         if handler:
             handler(args, client_socket, user)
-        else:
-            self.send_message_to_client(client_socket=client_socket, message=f":server {ResponseCode.ERR_UNKNOWNCOMMAND.value} {user.name} {command} :Unknown command")
+        # elif user:
+        #     self.send_message_to_client(client_socket=client_socket, message=f":server {ResponseCode.ERR_UNKNOWNCOMMAND.value} {user.name} {command} :Unknown command")
 
     def handle_nickname(self, args: list, client_socket: socket.socket, user: Optional[User]) -> None:
         if not args:
@@ -91,20 +91,27 @@ class Server:
         if not args or not user:
             return
         
-        # Send a message to the client about joining a channel
         channel_name = args[0]
         channel = self.channels.setdefault(channel_name, Channel(channel_name))
+        join_message = f":{user.name}!{user.name}@{self.host} JOIN {channel_name}"
+        for client in channel.clients:
+            self.send_message_to_client(self.get_client_socket(client), join_message)
+        
         channel.add_client(user)
-        self.send_message_to_client(client_socket, f":{user.name}!{user.name}@{self.host} JOIN {channel_name}")
-        self.send_message_to_client(client_socket, f":server {ResponseCode.RPL_WELCOME.value} {user.name} :You joined {channel_name}")
+        self.send_message_to_client(client_socket, join_message)
         self.handle_users_in_channel(channel, client_socket, user)
-    
+        for client in channel.clients:
+            if client != user:
+                self.send_message_to_client(self.get_client_socket(client), f":server {ResponseCode.RPL_NAMREPLY.value} {client.name} = {channel_name} :{user.name}")
+
+
     # Sends a list of users in a channel to the client
     def handle_users_in_channel(self, channel: Channel, client_socket: socket.socket, user: Optional[User]) -> None:
-        user_list = " ".join([client.name for client in channel.clients])
-        self.send_message_to_client(client_socket, f":server {ResponseCode.RPL_NAMREPLY.value} {user.name} {channel.name} :{user_list}")
-        self.send_message_to_client(client_socket, f":server {ResponseCode.RPL_ENDOFNAMES.value} {user.name} {channel.name} :End of /NAMES list.")
-
+        users_list = ""
+        for client in channel.clients:
+            users_list += f" {client.name}"
+        self.send_message_to_client(client_socket, f":server {ResponseCode.RPL_NAMREPLY.value} {user.name} = {channel.name} :{users_list}")
+        self.send_message_to_client(client_socket, f":server {ResponseCode.RPL_ENDOFNAMES.value} {user.name} {channel.name}")
 
     # Handles a client leaving a channel
     def handle_leave_channel(self, args: list, client_socket: socket.socket, user: Optional[User]) -> None:
@@ -130,6 +137,7 @@ class Server:
             self.send_channel_message(target, user, message)
         else:
             self.send_private_message(target, user, message)
+
 
     # Sends a message to all clients in a channel
     def send_channel_message(self, channel_name: str, sender: User, message: str) -> None:
@@ -170,7 +178,7 @@ class Server:
     def send_message_to_client(self, client_socket: socket.socket, message: str) -> None:
         try:
             print(f">>> Sending message: {message}")
-            client_socket.send(message.encode("utf-8"))
+            client_socket.send(f"{message}\r\n".encode("utf-8"))
         except Exception as e:
             print(f"### Failed to send message to {client_socket}: {e}")
 

@@ -8,6 +8,7 @@ class IRCServer:
         self.port = port
         self.clients = {}
         self.channels = defaultdict(set)
+        self.nicknames = set()
 
     async def handle_client(self, reader, writer):
         addr = writer.get_extra_info('peername')
@@ -57,6 +58,16 @@ class IRCServer:
         return nick if nick else str(addr)
 
     def set_nick(self, addr, nick):
+        
+        if any(client_nick == nick for _, client_nick, _ in self.clients.values()):
+            writer, _, _ = self.clients[addr]
+            error_msg = f":{self.host} {NumericReplies.ERR_NICKNAMEINUSE.value} {nick} :Nickname is already in use\n"
+            writer.write(error_msg.encode())
+            self.log(f"Sent: {error_msg.strip()}")
+            asyncio.create_task(writer.drain())
+            return 
+        
+        
         writer, _, user = self.clients[addr]
         self.clients[addr] = (writer, nick, user)
 

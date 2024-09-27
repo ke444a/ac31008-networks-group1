@@ -76,7 +76,7 @@ class Server:
         
         nickname = args[0]
         if nickname in self.clients:
-            self.send_message_to_client(client_socket=client_socket, message=f":server {ResponseCode.ERR_NICKNAMEINUSE.value} {user.name} {nickname} :Nickname is already in use.")
+            self.send_message_to_client(client_socket=client_socket, message=f":server {ResponseCode.ERR_NICKNAMEINUSE.value} {user.name} :Nickname is already in use.")
             return
         
         # If the user just connected, create a new user object with the nickname

@@ -77,9 +77,9 @@ class Server:
         if channel_name in self.channels:
             topic = self.channels[channel_name].topic
             if topic:
-                client.send(f":{self.host} {NumericReplies.RPL_TOPIC} {client.nickname} {channel_name} :{topic}")
+                client.send(f":{self.host} {NumericReplies.RPL_TOPIC.value} {client.nickname} {channel_name} :{topic}")
             else:
-                client.send(f":{self.host} {NumericReplies.RPL_NOTOPIC} {client.nickname} {channel_name} :No topic is set")
+                client.send(f":{self.host} {NumericReplies.RPL_NOTOPIC.value} {client.nickname} {channel_name} :No topic is set")
         else:
             client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
 

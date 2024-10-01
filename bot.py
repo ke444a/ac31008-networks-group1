@@ -102,6 +102,9 @@ class Bot:
             if len(parts) > 3 and parts[1] == 'PRIVMSG' and parts[2] == self.name:
                 private_message = ' '.join(parts[3:])[1:]
                 self.respond_to_private_message(sender, private_message)
+
+        if len(parts) <= 3 and parts[1] == 'JOIN':
+            self.send_message(f"NAMES {self.channel}")
         
         if len(parts) > 3 and parts[1] == 'TOPIC':
             if parts[3] == ':No':

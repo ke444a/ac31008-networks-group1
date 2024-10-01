@@ -27,7 +27,7 @@ class Server:
                 message = data.decode().strip()
 
                 if message:
-                    print(f"Received: {message}")
+                    print(f"\nReceived from <{client.nickname}>: {message}")
                     self.process_message(message, client)
 
         except ConnectionResetError:

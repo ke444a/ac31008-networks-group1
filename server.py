@@ -23,13 +23,15 @@ class Server:
             while True:
                 data = await reader.readline()
                 if not data:
-                    break  
+                    break
                 message = data.decode().strip()
 
                 if message:
-                    print(f"\nReceived from <{client.nickname}>: {message}")
+                    print(f"Received: {message}")
                     self.process_message(message, client)
 
+        except ConnectionResetError:
+            print(f"Connection reset by {addr}. Disconnecting client.")
         except asyncio.CancelledError:
             pass
         finally:
@@ -65,7 +67,7 @@ class Server:
                 self.get_topic(client, channel_name)
         elif command == "NAMES":
             channel_name = parts[1]
-            self.send_names_list(client, channel_name)  # Call the existing method for names list
+            self.send_names_list(client, channel_name)
 
     def set_topic(self, client, channel_name, topic):
         if channel_name in self.channels:
@@ -175,18 +177,23 @@ class Server:
         if client.nickname in self.nicknames:
             self.nicknames.remove(client.nickname)
 
-        for channel in self.channels.values():
+        channels_to_update = list(self.channels.values())
+        for channel in channels_to_update:
             if client in channel.members:
                 part_msg = f":{client.nickname} PART {channel.name} :Disconnected"
-                channel.broadcast(part_msg, exclude=client) 
-                channel.part(client) 
+                channel.broadcast(part_msg, exclude=client)
+                channel.part(client)
 
                 if channel.is_empty():
                     del self.channels[channel.name]
 
         if client.writer:
-            client.writer.close()
-            asyncio.create_task(client.writer.wait_closed())
+            try:
+                client.writer.close()
+                asyncio.create_task(self.safe_wait_closed(client.writer))
+
+            except Exception as e:
+                print(f"Error closing connection for {client.nickname}: {e}")
 
         addr_to_remove = None
         for addr, stored_client in self.clients.items():
@@ -196,6 +203,14 @@ class Server:
 
         if addr_to_remove:
             del self.clients[addr_to_remove]
+
+    async def wait_closed(self, writer):
+        try:
+            await writer.wait_closed()
+        except ConnectionResetError as e:
+            print(f"Connection reset during close: {e}")
+        except Exception as e:
+            print(f"Unexpected error during close: {e}")
 
     def send_names_list(self, client, channel_name):
         if channel_name in self.channels:

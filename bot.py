@@ -42,14 +42,29 @@ class Bot:
         self.send_message(f"JOIN {channel}")
 
     def listen_for_messages(self):
-        while True:
-            response = self.sock.recv(2048).decode('utf-8', errors='replace')
-            if response:
-                lines = response.strip()
-                for line in lines.splitlines():
-                    if line:
-                        print(f"\nReceived: {line.strip()}") 
-                        self.handle_server_response(line.strip())
+        try:
+            while True:
+                response = self.sock.recv(2048).decode('utf-8', errors='replace')
+                if response:
+                    lines = response.strip()
+                    for line in lines.splitlines():
+                        if line:
+                            print(f"\nReceived: {line.strip()}") 
+                            self.handle_server_response(line.strip())
+
+        except ConnectionResetError as e:
+            print(f"Connection lost: {e}")
+            self.handle_disconnect()
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            self.disconnect()
+
+    def disconnect(self):
+        print("Disconnected from the server.")
+        try:
+            self.sock.close()
+        except Exception as e:
+            print(f"Error while closing: {e}")
 
     def handle_server_response(self, response):
         parts = response.split()

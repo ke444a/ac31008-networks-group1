@@ -27,13 +27,14 @@ class Server:
                 message = data.decode().strip()
 
                 if message:
-                    print(f"Received: {message}")
+                    print(f"\nReceived: {message} From {client.nickname}")
                     self.process_message(message, client)
 
         except asyncio.CancelledError:
             pass
         finally:
             self.disconnect_client(client)
+            
     def process_message(self, message, client):
         parts = message.split()
         command = parts[0].upper()
@@ -52,6 +53,8 @@ class Server:
             recipient = parts[1]
             msg = ' '.join(parts[2:])[1:]
             self.send_message(client, recipient, msg)
+        elif command == "QUIT":
+            self.disconnect_client(client)
         elif command == "TOPIC":
             if len(parts) >= 3:
                 channel_name = parts[1]
@@ -60,8 +63,9 @@ class Server:
             else:
                 channel_name = parts[1]
                 self.get_topic(client, channel_name)
-        elif command == "QUIT":
-            self.disconnect_client(client)
+        elif command == "NAMES":
+            channel_name = parts[1]
+            self.send_names_list(client, channel_name)  # Call the existing method for names list
 
     def set_topic(self, client, channel_name, topic):
         if channel_name in self.channels:
@@ -143,7 +147,6 @@ class Server:
         else:
             client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
 
-
     def send_message(self, client, recipient, msg):
         if recipient.startswith("#"):
             if recipient in self.channels:
@@ -203,12 +206,14 @@ class Server:
         if channel_name in self.channels:
             channel = self.channels[channel_name]
             names_list = " ".join([member.nickname for member in channel.members])
-            client.send(format_names_message(self.host, client.nickname, channel_name, names_list))
-            client.send(format_end_names_message(self.host, client.nickname, channel_name))
+            client.send(f":{self.host} {NumericReplies.RPL_NAMREPLY.value} {client.nickname} = {channel_name} :{names_list}\n")  # NAMES reply
+            client.send(f":{self.host} {NumericReplies.RPL_ENDOFNAMES.value} {client.nickname} {channel_name} :End of NAMES list\n")  # End of NAMES reply
+        else:
+            client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
 
     async def start(self):
         server = await asyncio.start_server(self.handle_client, self.host, self.port, family=socket.AF_INET6)
-        print(f'Serving on {self.host}:{self.port}')
+        print(f'\nServing listening on {self.host}:{self.port} ...')
         async with server:
             await server.serve_forever()
 

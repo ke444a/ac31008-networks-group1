@@ -63,9 +63,6 @@ def format_myinfo_message(host, nick):
 def format_names_message(host, nick, channel, names_list):
     return f":{host} {NumericReplies.RPL_NAMREPLY.value} {nick} = {channel} :{names_list}\n"
 
-def format_end_names_message(host, nick, channel):
-    return f":{host} {NumericReplies.RPL_ENDOFNAMES.value} {nick} {channel} :End of /NAMES list.\n"
-
 def format_no_such_nick_message(host, nick, target_nick):
     return f":{host} {NumericReplies.ERR_NOSUCHNICK.value} {nick} {target_nick} :No such nick/channel\n"
 

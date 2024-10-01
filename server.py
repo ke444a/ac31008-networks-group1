@@ -15,7 +15,7 @@ class Server:
         self.nicknames = set()
 
     async def handle_client(self, reader, writer):
-        addr = writer.get_extra_info('peername')
+        addr = writer.get_extra_info('')
         client = Client(writer)
         self.clients[addr] = client
 
@@ -27,7 +27,7 @@ class Server:
                 message = data.decode().strip()
 
                 if message:
-                    print(f"\nReceived: {message} From {client.nickname}")
+                    print(f"\nReceived from <{client.nickname}>: {message}")
                     self.process_message(message, client)
 
         except asyncio.CancelledError:

@@ -14,6 +14,9 @@ class NumericReplies(Enum):
     ERR_NICKNAMEINUSE = "433"
     ERR_NONICKNAMEGIVEN = "431"
 
+def log_message(client, message):
+    print(f"\nSent to <{client.nickname}>: {message.strip()}")
+
 class Client:
     def __init__(self, writer, nickname=None, username=None):
         self.writer = writer
@@ -21,6 +24,7 @@ class Client:
         self.username = username
 
     def send(self, message):
+        log_message(self, message) 
         self.writer.write((message + "\r\n").encode())
         asyncio.create_task(self.writer.drain())
 
@@ -35,7 +39,7 @@ class Channel:
     def __init__(self, name):
         self.name = name
         self.members = set()
-        self.topic = None  # Add topic attribute
+        self.topic = None
 
     def join(self, client):
         self.members.add(client)

@@ -172,27 +172,22 @@ class Server:
                 client.send(format_no_such_nick_message(self.host, client.nickname, recipient))
 
     def disconnect_client(self, client):
-        # Remove the client's nickname from the set of nicknames
         if client.nickname in self.nicknames:
             self.nicknames.remove(client.nickname)
 
-        # Notify channels the client is part of about the disconnect
         for channel in self.channels.values():
             if client in channel.members:
                 part_msg = f":{client.nickname} PART {channel.name} :Disconnected"
-                channel.broadcast(part_msg, exclude=client)  # Broadcast to other members
-                channel.part(client)  # Remove the client from the channel
+                channel.broadcast(part_msg, exclude=client) 
+                channel.part(client) 
 
-                # Check if the channel is empty and delete it
                 if channel.is_empty():
                     del self.channels[channel.name]
 
-        # Close the client writer
         if client.writer:
             client.writer.close()
             asyncio.create_task(client.writer.wait_closed())
 
-        # Remove the client from the clients dictionary
         addr_to_remove = None
         for addr, stored_client in self.clients.items():
             if stored_client == client:
@@ -206,8 +201,8 @@ class Server:
         if channel_name in self.channels:
             channel = self.channels[channel_name]
             names_list = " ".join([member.nickname for member in channel.members])
-            client.send(f":{self.host} {NumericReplies.RPL_NAMREPLY.value} {client.nickname} = {channel_name} :{names_list}\n")  # NAMES reply
-            client.send(f":{self.host} {NumericReplies.RPL_ENDOFNAMES.value} {client.nickname} {channel_name} :End of NAMES list\n")  # End of NAMES reply
+            client.send(f":{self.host} {NumericReplies.RPL_NAMREPLY.value} {client.nickname} = {channel_name} :{names_list}\n")
+            client.send(f":{self.host} {NumericReplies.RPL_ENDOFNAMES.value} {client.nickname} {channel_name} :End of NAMES list\n") 
         else:
             client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
 

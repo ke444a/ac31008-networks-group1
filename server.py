@@ -15,7 +15,7 @@ class Server:
         self.nicknames = set()
 
     async def handle_client(self, reader, writer):
-        addr = writer.get_extra_info('')
+        addr = writer.get_extra_info('peername')
         client = Client(writer)
         self.clients[addr] = client
 

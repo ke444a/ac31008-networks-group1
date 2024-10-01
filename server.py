@@ -141,24 +141,33 @@ class Server:
                 client.send(format_no_such_nick_message(self.host, client.nickname, recipient))
 
     def disconnect_client(self, client):
+        # Remove the client's nickname from the set of nicknames
         if client.nickname in self.nicknames:
             self.nicknames.remove(client.nickname)
 
+        # Notify channels the client is part of about the disconnect
         for channel in self.channels.values():
-            channel.part(client)
-            if channel.is_empty():
-                del self.channels[channel.name]
+            if client in channel.members:
+                part_msg = f":{client.nickname} PART {channel.name} :Disconnected"
+                channel.broadcast(part_msg, exclude=client)  # Broadcast to other members
+                channel.part(client)  # Remove the client from the channel
 
+                # Check if the channel is empty and delete it
+                if channel.is_empty():
+                    del self.channels[channel.name]
+
+        # Close the client writer
         if client.writer:
             client.writer.close()
             asyncio.create_task(client.writer.wait_closed())
 
+        # Remove the client from the clients dictionary
         addr_to_remove = None
         for addr, stored_client in self.clients.items():
             if stored_client == client:
                 addr_to_remove = addr
                 break
-        
+
         if addr_to_remove:
             del self.clients[addr_to_remove]
 

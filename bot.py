@@ -55,7 +55,15 @@ class Bot:
             if parts[3] == ':No':
                 self.topic = "No topic is set."
             else:
-                self.topic = ' '.join(parts[3:])[1:] 
+                self.topic = ' '.join(parts[3:])[1:]
+
+        # Handle topic response from the server
+        elif len(parts) > 3 and parts[1] == '332':
+            topic = ' '.join(parts[3:])[1:]
+            self.send_message(f"PRIVMSG {self.channel} :Current topic for {self.channel}: {topic}")
+        
+        elif len(parts) > 3 and parts[1] == '331':
+            self.send_message(f"PRIVMSG {self.channel} :No topic is set for {self.channel}")
 
         elif len(parts) > 3 and parts[1] == 'PRIVMSG':
             sender = parts[0].split('!')[0][1:]
@@ -68,6 +76,7 @@ class Bot:
             if len(parts) > 3 and parts[1] == 'PRIVMSG' and parts[2] == self.name:
                 private_message = ' '.join(parts[3:])[1:]
                 self.respond_to_private_message(sender, private_message)
+
 
     def handle_command(self, sender, command):
         if command.startswith('hello'):
@@ -82,17 +91,12 @@ class Bot:
         parts = command.split(' ', 1)
 
         if len(parts) == 1:
-            if self.topic:
-                self.send_message(f"PRIVMSG {self.channel} :Current topic: {self.topic}")
-            else:
-                self.send_message(f"PRIVMSG {self.channel} :No topic is set.")
+            # Request the topic from the server
+            self.send_message(f"TOPIC {self.channel}")
         else:
             new_topic = parts[1]
             self.send_message(f"TOPIC {self.channel} :{new_topic}")
-            self.topic = new_topic
             print(f"Set new topic for {self.channel}: {new_topic}")
-
-            self.send_message(f"PRIVMSG {self.channel} :The topic has been set to: {new_topic}")
 
     def slap_user(self, sender, target):
         if target and target != self.name:

@@ -52,8 +52,36 @@ class Server:
             recipient = parts[1]
             msg = ' '.join(parts[2:])[1:]
             self.send_message(client, recipient, msg)
+        elif command == "TOPIC":
+            if len(parts) >= 3:
+                channel_name = parts[1]
+                topic = ' '.join(parts[2:])[1:]
+                self.set_topic(client, channel_name, topic)
+            else:
+                channel_name = parts[1]
+                self.get_topic(client, channel_name)
         elif command == "QUIT":
             self.disconnect_client(client)
+
+    def set_topic(self, client, channel_name, topic):
+        if channel_name in self.channels:
+            channel = self.channels[channel_name]
+            channel.topic = topic
+            topic_msg = f":{client.nickname} TOPIC {channel_name} :{topic}"
+            channel.broadcast(topic_msg)
+            client.send(f":{self.host} TOPIC {channel_name} :{topic}")
+        else:
+            client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
+
+    def get_topic(self, client, channel_name):
+        if channel_name in self.channels:
+            topic = self.channels[channel_name].topic
+            if topic:
+                client.send(f":{self.host} {NumericReplies.RPL_TOPIC} {client.nickname} {channel_name} :{topic}")
+            else:
+                client.send(f":{self.host} {NumericReplies.RPL_NOTOPIC} {client.nickname} {channel_name} :No topic is set")
+        else:
+            client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
 
     def set_nick(self, client, nickname):
         original_nickname = nickname

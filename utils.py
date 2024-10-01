@@ -5,6 +5,8 @@ class NumericReplies(Enum):
     RPL_WELCOME = "001"
     RPL_YOURHOST = "002"
     RPL_MYINFO = "004"
+    RPL_NOTOPIC = "331"
+    RPL_TOPIC = "332"
     RPL_NAMREPLY = "353"
     RPL_ENDOFNAMES = "366"
     ERR_NOSUCHNICK = "401"
@@ -33,6 +35,7 @@ class Channel:
     def __init__(self, name):
         self.name = name
         self.members = set()
+        self.topic = None  # Add topic attribute
 
     def join(self, client):
         self.members.add(client)

@@ -9,6 +9,7 @@ class Bot:
         self.name = name
         self.channel = channel
         self.sock = None
+        self.topic = None
 
         # jokes are from:
         # https://www.countryliving.com/life/entertainment/a36178514/hilariously-funny-jokes/
@@ -48,26 +49,50 @@ class Bot:
                 self.handle_server_response(response.strip())
 
     def handle_server_response(self, response):
-        if response.startswith(':'):
-            parts = response.split()
-            if len(parts) > 3 and parts[1] == 'PRIVMSG':
-                sender = parts[0].split('!')[0][1:]
-                message = ' '.join(parts[3:])[1:]
+        parts = response.split()
+        
+        if len(parts) > 3 and parts[1] == 'TOPIC':
+            if parts[3] == ':No':
+                self.topic = "No topic is set."
+            else:
+                self.topic = ' '.join(parts[3:])[1:] 
 
-                if message.startswith('!'):
-                    command = message[1:]
-                    self.handle_command(sender, command)
+        elif len(parts) > 3 and parts[1] == 'PRIVMSG':
+            sender = parts[0].split('!')[0][1:]
+            message = ' '.join(parts[3:])[1:]
+
+            if message.startswith('!'):
+                command = message[1:]
+                self.handle_command(sender, command)
 
             if len(parts) > 3 and parts[1] == 'PRIVMSG' and parts[2] == self.name:
                 private_message = ' '.join(parts[3:])[1:]
                 self.respond_to_private_message(sender, private_message)
 
     def handle_command(self, sender, command):
-        if command == 'hello':
+        if command.startswith('hello'):
             self.send_message(f"PRIVMSG {self.channel} :Hello, {sender}!")
         elif command.startswith('slap'):
             target = command.split()[1] if len(command.split()) > 1 else None
             self.slap_user(sender, target)
+        elif command.startswith('topic'):
+            self.handle_topic_command(sender, command)
+
+    def handle_topic_command(self, sender, command):
+        parts = command.split(' ', 1)
+
+        if len(parts) == 1:
+            if self.topic:
+                self.send_message(f"PRIVMSG {self.channel} :Current topic: {self.topic}")
+            else:
+                self.send_message(f"PRIVMSG {self.channel} :No topic is set.")
+        else:
+            new_topic = parts[1]
+            self.send_message(f"TOPIC {self.channel} :{new_topic}")
+            self.topic = new_topic
+            print(f"Set new topic for {self.channel}: {new_topic}")
+
+            self.send_message(f"PRIVMSG {self.channel} :The topic has been set to: {new_topic}")
 
     def slap_user(self, sender, target):
         if target and target != self.name:

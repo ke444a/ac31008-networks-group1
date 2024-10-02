@@ -12,16 +12,6 @@ class Bot:
         self.topic = None
         self.channel_members = [] 
 
-        # jokes are from:
-        # https://www.countryliving.com/life/entertainment/a36178514/hilariously-funny-jokes/
-        self.jokes = [
-            "Did you hear about the new squirrel diet? It's just nuts.!",
-            "I made song about tortilla once, now it's more like a wrap.",
-            "Did you hear about the spatula's hot new flame? It met the grill of its dreams.",
-            "Did you know corduroy pillows are in style? They're making headlines.",
-            "What do call a criminal landing an airplane? Condescending."
-        ]
-
     def connect(self):
         self.sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM) 
         self.sock.connect((self.host, self.port))
@@ -54,7 +44,7 @@ class Bot:
 
         except ConnectionResetError as e:
             print(f"Connection lost: {e}")
-            self.handle_disconnect()
+            self.disconnect()
         except Exception as e:
             print(f"Unexpected error: {e}")
             self.disconnect()
@@ -85,8 +75,9 @@ class Bot:
             pass
 
         elif len(parts) > 3 and parts[1] == '332':
-            topic = ' '.join(parts[3:])[1:]
+            topic = ' '.join(parts[4:])[1:]
             self.send_message(f"PRIVMSG {self.channel} :Current topic for {self.channel}: {topic}")
+            print({topic})
         
         elif len(parts) > 3 and parts[1] == '331':
             self.send_message(f"PRIVMSG {self.channel} :No topic is set for {self.channel}")
@@ -155,10 +146,23 @@ class Bot:
     def get_channel_members(self):
         self.send_message(f"NAMES {self.channel}") 
 
+    # jokes are from:
+    # https://www.countryliving.com/life/entertainment/a36178514/hilariously-funny-jokes/
     def respond_to_private_message(self, sender, message):
-        random_joke = random.choice(self.jokes)
+        random_joke = self.get_joke_from_file()
         self.send_message(f"PRIVMSG {sender} :{random_joke}")
 
+    def get_joke_from_file(self):
+        try:
+            with open('jokes.txt', 'r') as file:
+                jokes = file.readlines()
+                jokes = [joke.strip() for joke in jokes if joke.strip()]
+                if jokes:
+                    return random.choice(jokes)
+                else:
+                    return "Jokes text file is empty."
+        except FileNotFoundError:
+            return "Jokes text file not found."
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

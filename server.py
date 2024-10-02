@@ -190,7 +190,7 @@ class Server:
         if client.writer:
             try:
                 client.writer.close()
-                asyncio.create_task(self.safe_wait_closed(client.writer))
+                asyncio.create_task(self.wait_closed(client.writer))
 
             except Exception as e:
                 print(f"Error closing connection for {client.nickname}: {e}")

@@ -1,140 +1,232 @@
+import asyncio
 import socket
-import threading
+from collections import defaultdict
+import random
 
-# server info
-HOST = "::"
-PORT = "6667"
-clients = {}
-channels = {}
+from utils import *
+from utils import Channel, Client
 
-def manage_client(client_socket, client_address):
-    print(f"Client connected: {client_address}")
-    
-    # get client's info when they connect to the server
-    username = client_socket.recv(1024).decode('utf-8')
-    clients[client_socket] = {"address": client_address, "username": username, "channel": None}
-    
-    # was gonna make it automatically join #general chat but we need to use command line arguments for this anyway
-    # manage_client_join("general", client_socket, username)
+class Server:
+    def __init__(self, host='::1', port=6667):
+        self.host = host
+        self.port = port
+        self.clients = {}
+        self.channels = {}
+        self.nicknames = set()
 
-    while True:
+    async def handle_client(self, reader, writer):
+        addr = writer.get_extra_info('peername')
+        client = Client(writer)
+        self.clients[addr] = client
+
         try:
-            message = client_socket.recv(1024).decode('utf-8')
-            if message:
-                manage_message(message, client_socket, username)
+            while True:
+                data = await reader.readline()
+                if not data:
+                    break
+                message = data.decode().strip()
+
+                if message:
+                    print(f"\nReceived from <{client.nickname}>: {message}")
+                    self.process_message(message, client)
+
+        except ConnectionResetError:
+            print(f"Connection reset by {addr}. Disconnecting client.")
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self.disconnect_client(client)
+            
+    def process_message(self, message, client):
+        parts = message.split()
+        command = parts[0].upper()
+
+        if command == "NICK":
+            self.set_nick(client, parts[1])
+        elif command == "USER":
+            self.set_user(client, parts[1:])
+        elif command == "JOIN":
+            channel_name = parts[1]
+            self.join_channel(client, channel_name)
+        elif command == "PART":
+            channel_name = parts[1]
+            self.part_channel(client, channel_name)
+        elif command == "PRIVMSG":
+            recipient = parts[1]
+            msg = ' '.join(parts[2:])[1:]
+            self.send_message(client, recipient, msg)
+        elif command == "QUIT":
+            self.disconnect_client(client)
+        elif command == "TOPIC":
+            if len(parts) >= 3:
+                channel_name = parts[1]
+                topic = ' '.join(parts[2:])[1:]
+                self.set_topic(client, channel_name, topic)
             else:
-                break
-        except Exception as e:
-            print(f"Error: {e}")
-            break
+                channel_name = parts[1]
+                self.get_topic(client, channel_name)
+        elif command == "NAMES":
+            channel_name = parts[1]
+            self.send_names_list(client, channel_name)
 
-    # deals with when a client disconnects
-    client_socket.close()
-    current_channel = clients[client_socket].get("channel")
-    if current_channel:
-        channels[current_channel].remove(client_socket)  # removes client from channel when they disconnect
-    del clients[client_socket]  # removes client from client list when they disconnect
-    broadcast_message(f"{username} left the chat.", client_socket, current_channel)
-    print(f"Client disconnected: {client_address}")
-
-# deals with all types of input to the server
-def manage_message(message, sender_socket, username):
-    if message.startswith("/join "):
-        # if input is the join command then it calls the function that joins clients to a channel
-        channel_name = message.split()[1]
-        manage_client_join(channel_name, sender_socket, username)
-    elif message.startswith("/part"):
-        # If input is the part command, call the function to leave the channel
-        manage_client_part(sender_socket, username)
-    elif message.startswith("/msg "):
-        # if input is the msg then it's a private message
-        # extracts the username and sends the message to the intended recipient
-        parts = message.split(' ', 2)
-        if len(parts) == 3:
-            recipient_username = parts[1]
-            private_msg = parts[2]
-            manage_private_message(recipient_username, private_msg, sender_socket, username)
-    elif message == "/list":
-        # calls functions that lists all channels
-        list_channels(sender_socket)
-    else:
-        # if the input isn't a command, then it's a message
-        # then it sends the message to all clients in the same channel
-        current_channel = clients[sender_socket].get("channel")
-        if current_channel:
-            broadcast_message(f"{username}: {message}", sender_socket, current_channel)
+    def set_topic(self, client, channel_name, topic):
+        if channel_name in self.channels:
+            channel = self.channels[channel_name]
+            channel.topic = topic
+            topic_msg = f":{client.nickname} TOPIC {channel_name} :{topic}"
+            channel.broadcast(topic_msg)
+            client.send(f":{self.host} TOPIC {channel_name} :{topic}")
         else:
-            sender_socket.send("Use /join [channel] to join a channel.".encode('utf-8'))
+            client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
 
-# adds/joins client to a channel
-def manage_client_join(channel_name, client_socket, username):
-    current_channel = clients[client_socket].get("channel")
-    if current_channel:
-        # removes client from current channel first before adding them to a new channel
-        channels[current_channel].remove(client_socket)
+    def get_topic(self, client, channel_name):
+        if channel_name in self.channels:
+            topic = self.channels[channel_name].topic
+            if topic:
+                client.send(f":{self.host} {NumericReplies.RPL_TOPIC.value} {client.nickname} {channel_name} :{topic}")
+            else:
+                client.send(f":{self.host} {NumericReplies.RPL_NOTOPIC.value} {client.nickname} {channel_name} :No topic is set")
+        else:
+            client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
 
-    # adds client to the new channel
-    if channel_name not in channels:
-        channels[channel_name] = []
-    channels[channel_name].append(client_socket)
-    clients[client_socket]["channel"] = channel_name
+    def set_nick(self, client, nickname):
+        original_nickname = nickname
+        while nickname in self.nicknames:
+            nickname = f"{original_nickname}{random.randint(1000, 9999)}"
+        
+        client.nickname = nickname
+        self.nicknames.add(nickname)
 
-    # broadcast_messages new client's join message to all other clients in the same new channel
-    broadcast_message(f"{username} joined the channel {channel_name}", client_socket, channel_name)
-    client_socket.send(f"Joined channel #{channel_name}".encode('utf-8'))
+        if nickname != original_nickname:
+            notice_msg = f":{self.host} NOTICE * :Your nickname was changed to {nickname} because {original_nickname} is already in use\n"
+            client.send(notice_msg)
 
-# disconnects client from a channel
-def manage_client_part(client_socket, username):
-    current_channel = clients[client_socket].get("channel")
-    if current_channel:
-        channels[current_channel].remove(client_socket)  # removes the client from the current channel
-        clients[client_socket]["channel"] = None 
-        broadcast_message(f"{username} left the channel {current_channel}.", client_socket, current_channel)
-        client_socket.send(f"You left the channel {current_channel}.".encode('utf-8'))
-    else:
-        client_socket.send("You are already not in a channel.".encode('utf-8'))
+    def set_user(self, client, user_details):
+        if not client.nickname:
+            error_msg = f":{self.host} {NumericReplies.ERR_NONICKNAMEGIVEN.value} * :No nickname given\n"
+            client.send(error_msg)
+            return
 
-# sends private message to chosen recipient
-def manage_private_message(recipient_username, message, sender_socket, sender_username):
-    recipient_socket = None
-    for client_socket, info in clients.items():
-        if info["username"] == recipient_username:
-            recipient_socket = client_socket
-            break
+        client.username = ' '.join(user_details)
+        client.send(format_welcome_message(self.host, client.nickname))
+        client.send(format_host_message(self.host, client.nickname))
+        client.send(format_myinfo_message(self.host, client.nickname))
 
-    if recipient_socket:
-        recipient_socket.send(f"Private message from {sender_username}: {message}".encode('utf-8'))
-    else:
-        sender_socket.send(f"User {recipient_username} not found.".encode('utf-8'))
+    def join_channel(self, client, channel_name):
+        if not channel_name.startswith("#"):
+            error_msg = f":{self.host} {NumericReplies.ERR_NOSUCHNICK.value} {client.nickname} {channel_name} :No such channel\n"
+            client.send(error_msg)
+            return
 
-# lists all channels in the server
-def list_channels(client_socket):
-    if channels:
-        channel_list = "List of channels:\n" + "\n".join([f"#{channel}" for channel in channels.keys()])
-        client_socket.send(channel_list.encode('utf-8'))
-    else:
-        client_socket.send("Nono channels available.".encode('utf-8'))
+        if channel_name not in self.channels:
+            self.channels[channel_name] = Channel(channel_name)
 
-# sends message to client sin the same channel
-def broadcast_message(message, sender_socket, channel_name):
-    for client in channels.get(channel_name, []):
-        if client != sender_socket:
-            client.send(message.encode('utf-8'))
+        channel = self.channels[channel_name]
+        channel.join(client)
 
-def run_server():
-    server_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-    server_socket.bind(("::", 6667)) 
-    server_socket.listen(5)
-    print(f"Server listening on [{HOST}]:{PORT} ...") 
+        join_msg = f":{client.nickname} JOIN {channel_name}"
+        channel.broadcast(join_msg)
 
-    while True:
-        client_socket, client_address = server_socket.accept()
+        client.send(f":{client.nickname} JOIN {channel_name}")
 
-        # again i read that threading was recommended so i implemented it here too
-        # creates new thread for handling each client which allows more than one client to message
-        # at the same time
-        client_thread = threading.Thread(target=manage_client, args=(client_socket, client_address))
-        client_thread.start()
+        self.send_names_list(client, channel_name)
+
+    def part_channel(self, client, channel_name):
+        if channel_name in self.channels:
+            channel = self.channels[channel_name]
+
+            if client in channel.members:
+                part_msg = f":{client.nickname} PART {channel_name}"
+                channel.broadcast(part_msg, exclude=client)
+
+                channel.part(client)
+                client.send(part_msg)
+
+                if channel.is_empty():
+                    del self.channels[channel_name]
+            else:
+                client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
+        else:
+            client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
+
+    def send_message(self, client, recipient, msg):
+        if recipient.startswith("#"):
+            if recipient in self.channels:
+                channel = self.channels[recipient]
+                if client in channel.members:
+                    priv_msg = f":{client.nickname} PRIVMSG {recipient} :{msg}"
+                    channel.broadcast(priv_msg, exclude=client)
+                else:
+                    client.send(format_not_on_channel_message(self.host, client.nickname, recipient))
+            else:
+                client.send(format_not_on_channel_message(self.host, client.nickname, recipient))
+        else:
+            target_client = None
+            for addr, irc_client in self.clients.items():
+                if irc_client.nickname == recipient:
+                    target_client = irc_client
+                    break
+
+            if target_client:
+                priv_msg = f":{client.nickname} PRIVMSG {recipient} :{msg}"
+                target_client.send(priv_msg)
+            else:
+                client.send(format_no_such_nick_message(self.host, client.nickname, recipient))
+
+    def disconnect_client(self, client):
+        if client.nickname in self.nicknames:
+            self.nicknames.remove(client.nickname)
+
+        channels_to_update = list(self.channels.values())
+        for channel in channels_to_update:
+            if client in channel.members:
+                part_msg = f":{client.nickname} PART {channel.name} :Disconnected"
+                channel.broadcast(part_msg, exclude=client)
+                channel.part(client)
+
+                if channel.is_empty():
+                    del self.channels[channel.name]
+
+        if client.writer:
+            try:
+                client.writer.close()
+                asyncio.create_task(self.wait_closed(client.writer))
+
+            except Exception as e:
+                print(f"Error closing connection for {client.nickname}: {e}")
+
+        addr_to_remove = None
+        for addr, stored_client in self.clients.items():
+            if stored_client == client:
+                addr_to_remove = addr
+                break
+
+        if addr_to_remove:
+            del self.clients[addr_to_remove]
+
+    async def wait_closed(self, writer):
+        try:
+            await writer.wait_closed()
+        except ConnectionResetError as e:
+            print(f"Connection reset during close: {e}")
+        except Exception as e:
+            print(f"Unexpected error during close: {e}")
+
+    def send_names_list(self, client, channel_name):
+        if channel_name in self.channels:
+            channel = self.channels[channel_name]
+            names_list = " ".join([member.nickname for member in channel.members])
+            client.send(f":{self.host} {NumericReplies.RPL_NAMREPLY.value} {client.nickname} = {channel_name} :{names_list}\n")
+            client.send(f":{self.host} {NumericReplies.RPL_ENDOFNAMES.value} {client.nickname} {channel_name} :End of NAMES list\n") 
+        else:
+            client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
+
+    async def start(self):
+        server = await asyncio.start_server(self.handle_client, self.host, self.port, family=socket.AF_INET6)
+        print(f'\nServing listening on {self.host}:{self.port} ...')
+        async with server:
+            await server.serve_forever()
 
 if __name__ == "__main__":
-    run_server()
+    server = Server()
+    asyncio.run(server.start())

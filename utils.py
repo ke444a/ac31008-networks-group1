@@ -45,6 +45,8 @@ class Channel:
         self.name = name
         self.members = set()
         self.topic = None
+        self.banned_users = set()
+        self.muted_users = set()
 
     def join(self, client):
         self.members.add(client)

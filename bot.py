@@ -1,8 +1,8 @@
+import asyncio
 import socket
 import argparse
 import random
 import time
-import asyncio
 
 class Bot:
     def __init__(self, host, port, name, channel):
@@ -15,8 +15,9 @@ class Bot:
         self.channel_members = [] 
         self.active_poll = None
         self.poll_votes = {}
+        self.loop = asyncio.get_event_loop()
 
-    def connect(self):
+    async def connect(self):
         self.sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM) 
         self.sock.connect((self.host, self.port))
         print(f'\nConnecting to {self.host}:{self.port} as {self.name}...')
@@ -26,7 +27,7 @@ class Bot:
 
         self.join_channel(self.channel)
 
-        self.listen_for_messages()
+        await self.listen_for_messages()
 
     def send_message(self, message):
         self.sock.sendall((message + "\r\n").encode())
@@ -35,16 +36,17 @@ class Bot:
     def join_channel(self, channel):
         self.send_message(f"JOIN {channel}")
 
-    def listen_for_messages(self):
+    async def listen_for_messages(self):
         try:
             while True:
-                response = self.sock.recv(2048).decode('utf-8', errors='replace')
+                response = await self.loop.sock_recv(self.sock, 2048)
+                response = response.decode('utf-8', errors='replace')
                 if response:
                     lines = response.strip()
                     for line in lines.splitlines():
                         if line:
                             print(f"\nReceived: {line.strip()}") 
-                            self.handle_server_response(line.strip())
+                            await self.handle_server_response(line.strip())
 
         except ConnectionResetError as e:
             print(f"Connection lost: {e}")
@@ -60,7 +62,7 @@ class Bot:
         except Exception as e:
             print(f"Error while closing: {e}")
 
-    def handle_server_response(self, response):
+    async def handle_server_response(self, response):
         parts = response.split()
         
         if len(parts) > 3 and parts[1] == '353': 
@@ -92,7 +94,7 @@ class Bot:
 
             if message.startswith('!'):
                 command = message[1:]
-                self.handle_command(sender, command)
+                await self.handle_command(sender, command)
 
             if len(parts) > 3 and parts[1] == 'PRIVMSG' and parts[2] == self.name:
                 private_message = ' '.join(parts[3:])[1:]
@@ -113,7 +115,7 @@ class Bot:
             else:
                 self.topic = ' '.join(parts[3:])[1:]
 
-    def handle_command(self, sender, command):
+    async def handle_command(self, sender, command):
         if command.startswith('hello'):
             self.send_message(f"PRIVMSG {self.channel} :Hello, {sender}!")
         elif command.startswith('slap'):
@@ -122,53 +124,58 @@ class Bot:
         elif command.startswith('topic'):
             self.handle_topic_command(sender, command)
         elif command.startswith('poll'):
-            self.handle_poll_command(sender, command)
+            await self.handle_poll_command(sender, command)
         elif command.startswith('vote'):
-            self.handle_vote_command(sender, command)
+            await self.handle_vote_command(sender, command)
     
 
-    def handle_poll_command(self, sender, command):
+    async def handle_poll_command(self, sender, command):
         parts = command.split(' ', 1)
         if len(parts) < 2 or ';' not in parts[1]:
-            self.send_message(f"PRIVMSG {self.channel} :Invalid poll format. Usage: !poll <question> <option1>;<option2>;<option3>...;")
+            self.send_message(f"PRIVMSG {self.channel} :Error: Invalid poll format. Use '!poll <question> <option1>;<option2>;...'")
             return
 
-        question, options = parts[1].split(' ', 1)
-        options = [opt.strip() for opt in options.split(';') if opt.strip()]
+        question, options_str = parts[1].split('?', 1)
+        options = [opt.strip() for opt in options_str.split(';') if opt.strip()]
 
         if len(options) < 2:
-            self.send_message(f"PRIVMSG {self.channel} :Error: A poll must have at least 2 options.")
+            self.send_message(f"PRIVMSG {self.channel} :Error: A poll must have at least two options.")
             return
 
         self.active_poll = {
-            'question': question,
+            'question': question.strip() + '?',
             'options': options,
             'start_time': time.time(),
-            'duration': 60
+            'duration': 60  # 1 minute
         }
         self.poll_votes = {}
 
-        poll_message = f"Poll started by {sender}:\nQuestion:{question}\nOptions: {', '.join(options)}\nType !vote <option> to vote."
+        poll_message = f"New poll: {self.active_poll['question']} Options: {', '.join(self.active_poll['options'])}"
+        self.send_message(f"PRIVMSG {self.channel} :{poll_message}")
+
         for member in self.channel_members:
-            self.send_message(f"PRIVMSG {member} :{poll_message}")
-        asyncio.create_task(self.end_poll())
+            if member != self.name:
+                self.send_message(f"PRIVMSG {member} :A new poll has started! Use '!vote <option>' to cast your vote.")
+
+        self.loop.create_task(self.end_poll())
 
     async def end_poll(self):
         await asyncio.sleep(self.active_poll['duration'])
-
+        
         total_votes = sum(self.poll_votes.values())
         results = []
-        for option in self.active_poll['options']:
-            votes = self.poll_votes.get(option, 0)
-            percentage = (votes / total_votes) * 100 if total_votes > 0 else 0
-            results.append(f"{option}: {votes} votes ({percentage:.2f}%)")
+        for i, option in enumerate(self.active_poll['options']):
+            votes = self.poll_votes.get(i, 0)
+            percentage = (votes / total_votes * 100) if total_votes > 0 else 0
+            results.append(f"{option}: {percentage:.1f}%")
 
-        results_message = f"Poll ended for {self.active_poll['question']}\nResults:\n{', '.join(results)}"
-        self.send_message(f"PRIVMSG {self.channel} :{results_message}")
+        result_message = f"Poll results for '{self.active_poll['question']}' - {' | '.join(results)}"
+        self.send_message(f"PRIVMSG {self.channel} :{result_message}")
+
         self.active_poll = None
         self.poll_votes = {}
-    
-    def handle_vote_command(self, sender, command):
+
+    async def handle_vote_command(self, sender, command):
         if not self.active_poll:
             self.send_message(f"PRIVMSG {sender} :No active poll.")
             return
@@ -260,4 +267,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     bot = Bot(args.host, args.port, args.name, args.channel)
-    bot.connect()
+    asyncio.run(bot.connect())
+    

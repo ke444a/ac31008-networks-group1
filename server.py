@@ -236,7 +236,6 @@ class Server:
     
     def handle_mode(self, client, parts):
         if len(parts) < 2:
-            client.send()
             return
 
         channel_name = parts[0]

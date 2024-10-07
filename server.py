@@ -87,6 +87,10 @@ class Server:
         elif command == "NAMES":
             channel_name = parts[1]
             self.send_names_list(client, channel_name)
+        elif command == "KICK":
+            channel_name = parts[1]
+            target_nickname = parts[2]
+            self.kick_user(client, channel_name, target_nickname)
 
     def set_topic(self, client, channel_name, topic):
         if channel_name in self.channels:
@@ -191,6 +195,39 @@ class Server:
                 target_client.send(priv_msg)
             else:
                 client.send(format_no_such_nick_message(self.host, client.nickname, recipient))
+
+    def kick_user(self, client, channel_name, target_nickname):
+
+        print(f"Attempting to kick {target_nickname} from {channel_name} by {client.nickname}")
+        if channel_name in self.channels:
+            channel = self.channels[channel_name]
+            target_client = None
+            for member in channel.members:
+                if member.nickname == target_nickname:
+                    target_client = member
+                    break
+
+            if target_client:
+                print(f"Found target client {target_client.nickname}")
+                if client.nickname == target_client.nickname:
+                    print(f"User is attempting to kick themseleves. Aborting the kick..")
+                    client.send(f":{self.host} {NumericReplies.ERR_NOPRIVILEGES.value} {client.nickname} {channel_name} :You cannot kick yourself\n")
+                    return
+                
+                kick_msg = f":{client.nickname} KICK {channel_name} {target_nickname} :Kicked by {client.nickname}"
+                channel.broadcast(kick_msg)
+                channel.part(target_client)
+                target_client.send(kick_msg)
+
+                if target_client.nickname == self.bot_nickname:
+                    print(f"Bot kicked from {channel_name}. Rejoining....")
+                    self.join_channel(target_client, channel_name)
+            else:
+                print(f"Target client {target_nickname} not found in {channel_name}")
+                client.send(f":self.host {NumericReplies.ERR_NOSUCHNICK.value} {client.nickname} {target_nickname} :No such nick/channel\n")
+        else:
+            print(f"Channel {channel_name} not found")
+            client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
 
     def disconnect_client(self, client):
         if client.nickname in self.nicknames:

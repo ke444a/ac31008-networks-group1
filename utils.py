@@ -13,7 +13,8 @@ class NumericReplies(Enum):
     ERR_NOTONCHANNEL = "442"
     ERR_NICKNAMEINUSE = "433"
     ERR_NONICKNAMEGIVEN = "431"
-
+    ERR_NOPRIVILEGES = "481"
+    
 def log_message(client, message):
     print(f"\nSent to <{client.nickname}>: {message.strip()}")
 

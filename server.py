@@ -2,6 +2,7 @@ import asyncio
 import socket
 from collections import defaultdict
 import random
+from datetime import datetime, timedelta
 
 from utils import *
 from utils import Channel, Client
@@ -13,10 +14,13 @@ class Server:
         self.clients = {}
         self.channels = {}
         self.nicknames = set()
+        self.check_interval = 10
+        self.bot_nickname = "SuperBot"
 
     async def handle_client(self, reader, writer):
         addr = writer.get_extra_info('peername')
         client = Client(writer)
+        client.last_active = datetime.now()
         self.clients[addr] = client
 
         try:
@@ -27,6 +31,8 @@ class Server:
                 message = data.decode().strip()
 
                 if message:
+                    client.last_active = datetime.now()
+                    print(client.last_active)
                     print(f"\nReceived from <{client.nickname}>: {message}")
                     self.process_message(message, client)
 
@@ -36,6 +42,19 @@ class Server:
             pass
         finally:
             self.disconnect_client(client)
+
+    async def check_inactive_clients(self):
+        while True:
+            await asyncio.sleep(self.check_interval)
+            if not self.clients:
+                break
+            now = datetime.now()
+            for addr, client in list(self.clients.items()):
+                if client.nickname == self.bot_nickname:
+                    continue
+                if now - client.last_active > timedelta(minutes=1):
+                    print(f"Client {client.nickname} inactive for 1 minute. Disconnecting.")
+                    self.disconnect_client(client)
             
     def process_message(self, message, client):
         parts = message.split()
@@ -224,6 +243,7 @@ class Server:
     async def start(self):
         server = await asyncio.start_server(self.handle_client, self.host, self.port, family=socket.AF_INET6)
         print(f'\nServing listening on {self.host}:{self.port} ...')
+        asyncio.create_task(self.check_inactive_clients())
         async with server:
             await server.serve_forever()
 

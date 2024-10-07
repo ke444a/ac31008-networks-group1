@@ -3,6 +3,7 @@ import argparse
 import random
 import time
 import threading
+from utils import NumericReplies
 
 class Bot:
     def __init__(self, host, port, name, channel):
@@ -64,7 +65,7 @@ class Bot:
     def handle_server_response(self, response):
         parts = response.split()
         
-        if len(parts) > 3 and parts[1] == '353': 
+        if len(parts) > 3 and parts[1] == NumericReplies.RPL_NAMREPLY.value: 
             self.channel_members = []
             names = parts[4:]  
             for name in names:
@@ -75,15 +76,15 @@ class Bot:
                     
             print(f"\nUsers in {self.channel}: {self.channel_members}")
 
-        elif len(parts) > 3 and parts[1] == '366': 
+        elif len(parts) > 3 and parts[1] == NumericReplies.RPL_ENDOFNAMES.value: 
             pass
 
-        elif len(parts) > 3 and parts[1] == '332':
+        elif len(parts) > 3 and parts[1] == NumericReplies.RPL_TOPIC.value:
             topic = ' '.join(parts[4:])[1:]
             self.send_message(f"PRIVMSG {self.channel} :Current topic for {self.channel}: {topic}")
             print({topic})
         
-        elif len(parts) > 3 and parts[1] == '331':
+        elif len(parts) > 3 and parts[1] == NumericReplies.RPL_NOTOPIC.value:
             self.send_message(f"PRIVMSG {self.channel} :No topic is set for {self.channel}")
 
         elif len(parts) > 3 and parts[1] == 'PRIVMSG':
@@ -94,7 +95,7 @@ class Bot:
                 command = message[1:]
                 self.handle_command(sender, command)
 
-            if len(parts) > 3 and parts[1] == 'PRIVMSG' and parts[2] == self.name and not parts[3] != ':!vote':
+            if len(parts) > 3 and parts[1] == 'PRIVMSG' and parts[2] == self.name:
                 private_message = ' '.join(parts[3:])[1:]
                 self.respond_to_private_message(sender, private_message)
         
@@ -123,19 +124,16 @@ class Bot:
             self.handle_topic_command(sender, command)
         elif command.startswith('poll'):
             self.handle_poll_command(sender, command)
-        elif command.startswith('end_poll'):
-            self.handle_end_poll(sender)
         elif command.startswith('vote'):
             self.handle_vote_command(sender, command)
-    
-
     def handle_poll_command(self, sender, command):
         parts = command.split(' ', 1)
         if len(parts) < 2 or ';' not in parts[1]:
-            self.send_message(f"PRIVMSG {self.channel} :Invalid poll format. Usage: !poll <question> <option1>;<option2>;<option3>...;")
+            self.send_message(f"PRIVMSG {self.channel} :Invalid poll format. Usage: !poll \"<question>\" <option1>;<option2>;<option3>...;")
             return
 
-        question, options = parts[1].split(' ', 1)
+        question, options = parts[1].split('"', 2)
+        question = question.strip()
         options = [opt.strip() for opt in options.split(';') if opt.strip()]
 
         if len(options) < 2:
@@ -143,7 +141,7 @@ class Bot:
             return
         
         if self.active_poll:
-            self.send_message(f"PRIVMSG {self.channel} :There is already an active poll. End it with !end_poll")
+            self.send_message(f"PRIVMSG {self.channel} :There is already an active poll. Wait for it to end.")
             return
 
         self.active_poll = {
@@ -156,14 +154,12 @@ class Bot:
         self.poll_voters = set()  # Reset voters for new poll
 
 
-        poll_message = f"Poll started by {sender}\nQuestion:{question}\nOptions: {', '.join(options)}\nType !vote <option> to vote."
-        for member in self.channel_members:
-            if member != self.name:
-                for msg in poll_message.split('\n'):
-                    self.send_message(f"PRIVMSG {member} :{msg}")
+        poll_message = f"Poll started by {sender}\nQuestion:\"{question}\"\nOptions: {', '.join(options)}\nType !vote <option> to vote.\nTime limit: 45 seconds."
+        for msg in poll_message.split('\n'):
+            self.send_message(f"PRIVMSG {self.channel} :{msg}")
     
         # Start a timer to end the poll
-        threading.Timer(60, self.handle_end_poll, args=[self.name]).start()
+        threading.Timer(45, self.handle_end_poll, args=[self.name]).start()
 
     def handle_end_poll(self, sender):
         if not self.active_poll:
@@ -177,7 +173,7 @@ class Bot:
             percentage = (votes / total_votes) * 100 if total_votes > 0 else 0
             results.append(f"{option}: {votes} votes ({percentage:.2f}%)")
 
-        results_message = f"Poll ended for {self.active_poll['question']}\nResults:\n{', '.join(results)}"
+        results_message = f"Poll ended for '{self.active_poll['question']}'\nResults:\n{', '.join(results)}"
         for msg in results_message.split('\n'):
             self.send_message(f"PRIVMSG {self.channel} :{msg}")
         self.active_poll = None
@@ -186,16 +182,16 @@ class Bot:
     
     def handle_vote_command(self, sender, command):
         if not self.active_poll:
-            self.send_message(f"PRIVMSG {sender} :No active poll.")
+            self.send_message(f"PRIVMSG {self.channel} :No active poll.")
             return
 
         if sender in self.poll_voters:
-            self.send_message(f"PRIVMSG {sender} :You have already voted in this poll.")
+            self.send_message(f"PRIVMSG {self.channel} :{sender}, you have already voted in this poll.")
             return
 
         parts = command.split(' ', 1)
         if len(parts) < 2:
-            self.send_message(f"PRIVMSG {sender} :Invalid vote format. Usage: !vote <option>")
+            self.send_message(f"PRIVMSG {self.channel} :Invalid vote format. Usage: !vote <option>")
             return
 
         vote = parts[1].strip().lower()
@@ -203,10 +199,10 @@ class Bot:
             if vote == option.lower():
                 self.poll_votes[option] = self.poll_votes.get(option, 0) + 1
                 self.poll_voters.add(sender)
-                self.send_message(f"PRIVMSG {sender} :Your vote has been registered for {option}.")
+                self.send_message(f"PRIVMSG {self.channel} :{sender}, your vote has been registered for {option}.")
                 return
 
-        self.send_message(f"PRIVMSG {sender} :Invalid vote option. Valid options: {', '.join(self.active_poll['options'])}")
+        self.send_message(f"PRIVMSG {self.channel} :{sender}, invalid vote option. Valid options: {', '.join(self.active_poll['options'])}")
 
 
     def handle_mode_change(self, channel, mode, target):
@@ -270,13 +266,6 @@ class Bot:
                     return "Jokes text file is empty."
         except FileNotFoundError:
             return "Jokes text file not found."
-
-    def handle_private_message(self, sender, message):
-        if message.startswith('!vote'):
-            self.handle_vote_command(sender, message)
-        else:
-            random_joke = self.get_joke_from_file()
-            self.send_message(f"PRIVMSG {sender} :{random_joke}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

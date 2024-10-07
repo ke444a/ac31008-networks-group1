@@ -1,6 +1,8 @@
 import socket
 import argparse
 import random
+import time
+import asyncio
 
 class Bot:
     def __init__(self, host, port, name, channel):
@@ -11,6 +13,8 @@ class Bot:
         self.sock = None
         self.topic = None
         self.channel_members = [] 
+        self.active_poll = None
+        self.poll_votes = {}
 
     def connect(self):
         self.sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM) 
@@ -117,6 +121,72 @@ class Bot:
             self.slap_user(sender, target)
         elif command.startswith('topic'):
             self.handle_topic_command(sender, command)
+        elif command.startswith('poll'):
+            self.handle_poll_command(sender, command)
+        elif command.startswith('vote'):
+            self.handle_vote_command(sender, command)
+    
+
+    def handle_poll_command(self, sender, command):
+        parts = command.split(' ', 1)
+        if len(parts) < 2 or ';' not in parts[1]:
+            self.send_message(f"PRIVMSG {self.channel} :Invalid poll format. Usage: !poll <question> <option1>;<option2>;<option3>...;")
+            return
+
+        question, options = parts[1].split(' ', 1)
+        options = [opt.strip() for opt in options.split(';') if opt.strip()]
+
+        if len(options) < 2:
+            self.send_message(f"PRIVMSG {self.channel} :Error: A poll must have at least 2 options.")
+            return
+
+        self.active_poll = {
+            'question': question,
+            'options': options,
+            'start_time': time.time(),
+            'duration': 60
+        }
+        self.poll_votes = {}
+
+        poll_message = f"Poll started by {sender}:\nQuestion:{question}\nOptions: {', '.join(options)}\nType !vote <option> to vote."
+        for member in self.channel_members:
+            self.send_message(f"PRIVMSG {member} :{poll_message}")
+        asyncio.create_task(self.end_poll())
+
+    async def end_poll(self):
+        await asyncio.sleep(self.active_poll['duration'])
+
+        total_votes = sum(self.poll_votes.values())
+        results = []
+        for option in self.active_poll['options']:
+            votes = self.poll_votes.get(option, 0)
+            percentage = (votes / total_votes) * 100 if total_votes > 0 else 0
+            results.append(f"{option}: {votes} votes ({percentage:.2f}%)")
+
+        results_message = f"Poll ended for {self.active_poll['question']}\nResults:\n{', '.join(results)}"
+        self.send_message(f"PRIVMSG {self.channel} :{results_message}")
+        self.active_poll = None
+        self.poll_votes = {}
+    
+    def handle_vote_command(self, sender, command):
+        if not self.active_poll:
+            self.send_message(f"PRIVMSG {sender} :No active poll.")
+            return
+
+        parts = command.split(' ', 1)
+        if len(parts) < 2:
+            self.send_message(f"PRIVMSG {sender} :Invalid vote format. Usage: !vote <option>")
+            return
+
+        vote = parts[1].strip().lower()
+        for option in self.active_poll['options']:
+            if vote == option.lower():
+                self.poll_votes[option] = self.poll_votes.get(option, 0) + 1
+                self.send_message(f"PRIVMSG {sender} :Your vote has been registered for {option}.")
+                return
+
+        self.send_message(f"PRIVMSG {sender} :Invalid vote option. Valid options: {', '.join(self.active_poll['options'])}")
+
 
     def handle_mode_change(self, channel, mode, target):
         if mode == '+b' and target:

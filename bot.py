@@ -93,6 +93,12 @@ class Bot:
             if len(parts) > 3 and parts[1] == 'PRIVMSG' and parts[2] == self.name:
                 private_message = ' '.join(parts[3:])[1:]
                 self.respond_to_private_message(sender, private_message)
+        
+        elif len(parts) > 3 and parts[1] == 'MODE':
+            channel = parts[2]
+            mode = parts[3]
+            target = parts[4] if len(parts) > 4 else None
+            self.handle_mode_change(channel, mode, target)
 
         if len(parts) <= 3 and parts[1] == 'JOIN':
             self.send_message(f"NAMES {self.channel}")
@@ -111,6 +117,16 @@ class Bot:
             self.slap_user(sender, target)
         elif command.startswith('topic'):
             self.handle_topic_command(sender, command)
+
+    def handle_mode_change(self, channel, mode, target):
+        if mode == '+b' and target:
+            print(f"{target} has been banned from {channel}")
+        elif mode == '-b' and target:
+            print(f"{target} has been unbanned from {channel}")
+        elif mode == '+m' and target:
+            print(f"{target} has been muted in {channel}")
+        elif mode == '-m' and target:
+            print(f"{target} has been unmuted in {channel}")
 
     def handle_topic_command(self, sender, command):
         parts = command.split(' ', 1)

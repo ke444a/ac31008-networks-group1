@@ -1,6 +1,5 @@
 import asyncio
 import socket
-from collections import defaultdict
 import random
 from datetime import datetime, timedelta
 
@@ -16,6 +15,8 @@ class Server:
         self.nicknames = set()
         self.check_interval = 10
         self.bot_nickname = "SuperBot"
+        self.banned_users = {}
+        self.muted_users = {}
 
     async def handle_client(self, reader, writer):
         addr = writer.get_extra_info('peername')
@@ -91,6 +92,8 @@ class Server:
             channel_name = parts[1]
             target_nickname = parts[2]
             self.kick_user(client, channel_name, target_nickname)
+        elif command == "MODE":
+            self.handle_mode(client, parts[1:])
 
     def set_topic(self, client, channel_name, topic):
         if channel_name in self.channels:
@@ -177,10 +180,13 @@ class Server:
             if recipient in self.channels:
                 channel = self.channels[recipient]
                 if client in channel.members:
-                    priv_msg = f":{client.nickname} PRIVMSG {recipient} :{msg}"
-                    channel.broadcast(priv_msg, exclude=client)
-                else:
-                    client.send(format_not_on_channel_message(self.host, client.nickname, recipient))
+                    if client.nickname in channel.banned_users:
+                        client.send(f":{self.host} 404 {client.nickname} {recipient} :Cannot send to channel (You're banned)")
+                    elif client.nickname in channel.muted_users:
+                        client.send(f":{self.host} 404 {client.nickname} {recipient} :Cannot send to channel (You're muted)")
+                    else:
+                        priv_msg = f":{client.nickname} PRIVMSG {recipient} :{msg}"
+                        channel.broadcast(priv_msg, exclude=client)
             else:
                 client.send(format_not_on_channel_message(self.host, client.nickname, recipient))
         else:
@@ -197,7 +203,6 @@ class Server:
                 client.send(format_no_such_nick_message(self.host, client.nickname, recipient))
 
     def kick_user(self, client, channel_name, target_nickname):
-
         print(f"Attempting to kick {target_nickname} from {channel_name} by {client.nickname}")
         if channel_name in self.channels:
             channel = self.channels[channel_name]
@@ -228,7 +233,50 @@ class Server:
         else:
             print(f"Channel {channel_name} not found")
             client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
+    
+    def handle_mode(self, client, parts):
+        if len(parts) < 2:
+            client.send()
+            return
 
+        channel_name = parts[0]
+        mode = parts[1]
+        target = parts[2] if len(parts) > 2 else None
+
+        if channel_name not in self.channels:
+            client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
+            return
+
+        channel = self.channels[channel_name]
+        if mode == "+b" and target:
+            self.ban_user(client, channel, target)
+        elif mode == "-b" and target:
+            self.unban_user(client, channel, target)
+        elif mode == "+m" and target:
+            self.mute_user(client, channel, target)
+        elif mode == "-m" and target:
+            self.unmute_user(client, channel, target)
+    
+    def ban_user(self, client, channel, target):
+        if not channel.is_banned(target):
+            channel.ban_user(target)
+            channel.broadcast(format_mode_message(self.host, client.nickname, channel.name, "+b", target))
+
+    def unban_user(self, client, channel, target):
+        if channel.is_banned(target):
+            channel.unban_user(target)
+            channel.broadcast(format_mode_message(self.host, client.nickname, channel.name, "-b", target))
+
+    def mute_user(self, client, channel, target):
+        if not channel.is_muted(target):
+            channel.mute_user(target)
+            channel.broadcast(format_mode_message(self.host, client.nickname, channel.name, "+m", target))
+    
+    def unmute_user(self, client, channel, target):
+        if channel.is_muted(target):
+            channel.unmute_user(target)
+            channel.broadcast(format_mode_message(self.host, client.nickname, channel.name, "-m", target))
+    
     def disconnect_client(self, client):
         if client.nickname in self.nicknames:
             self.nicknames.remove(client.nickname)

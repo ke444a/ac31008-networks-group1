@@ -101,7 +101,7 @@ class Server:
             channel.topic = topic
             topic_msg = f":{client.nickname} TOPIC {channel_name} :{topic}"
             channel.broadcast(topic_msg)
-            client.send(f":{self.host} TOPIC {channel_name} :{topic}")
+            # client.send(f":{self.host} TOPIC {channel_name} :{topic}")
         else:
             client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
 
@@ -157,12 +157,10 @@ class Server:
             return
 
         channel.join(client)
-
         join_msg = f":{client.nickname} JOIN {channel_name}"
         channel.broadcast(join_msg)
 
-        client.send(f":{client.nickname} JOIN {channel_name}")
-
+        # client.send(f":{client.nickname} JOIN {channel_name}")
         self.send_names_list(client, channel_name)
 
     def part_channel(self, client, channel_name):
@@ -175,7 +173,6 @@ class Server:
 
                 channel.part(client)
                 client.send(part_msg)
-
                 if channel.is_empty():
                     del self.channels[channel_name]
             else:
@@ -270,8 +267,16 @@ class Server:
         if not channel.is_banned(target):
             channel.ban_user(target)
             channel.broadcast(format_mode_message(self.host, client.nickname, channel.name, "+b", target))
-            if target in channel.members:
-                self.part_channel(target, channel.name)
+
+            target_client = None
+            for member in channel.members:
+                if member.nickname == target:
+                    target_client = member
+                    break
+
+            if target_client:
+                self.part_channel(target_client, channel.name)
+
 
     def unban_user(self, client, channel, target):
         if channel.is_banned(target):

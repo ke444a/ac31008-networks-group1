@@ -126,6 +126,63 @@ class Bot:
             self.handle_poll_command(sender, command)
         elif command.startswith('vote'):
             self.handle_vote_command(sender, command)
+        elif command.startswith('kick'):
+            self.handle_kick_command(sender, command)
+        elif command.startswith('ban'):
+            self.handle_ban_command(sender, command)
+        elif command.startswith('unban'):
+            self.handle_unban_command(sender, command)
+        elif command.startswith('mute'):
+            self.handle_mute_command(sender, command)
+        elif command.startswith('unmute'):
+            self.handle_unmute_command(sender, command) 
+    
+
+    def handle_kick_command(self, sender, command):
+        parts = command.split(' ', 1)
+        if len(parts) < 2:
+            self.send_message(f"PRIVMSG {self.channel} :Invalid kick format. Usage: !kick <nickname>")
+            return
+
+        target = parts[1].strip()
+        self.send_message(f"KICK {self.channel} {target} :Kicked by {sender}")
+    
+    def handle_ban_command(self, sender, command):
+        parts = command.split()
+        if len(parts) < 2:
+            self.send_message(f"PRIVMSG {self.channel} :Usage: !ban <nickname>")
+            return
+        target = parts[1]
+        self.send_message(f"MODE {self.channel} +b {target}")
+        self.send_message(f"PRIVMSG {self.channel} :{target} has been banned from {self.channel}")
+    
+    def handle_mute_command(self, sender, command):
+        parts = command.split()
+        if len(parts) < 2:
+            self.send_message(f"PRIVMSG {self.channel} :Usage: !mute <nickname>")
+            return
+        target = parts[1]
+        self.send_message(f"MODE {self.channel} +m {target}")
+        self.send_message(f"PRIVMSG {self.channel} :{target} has been muted in {self.channel}")
+
+    def handle_unban_command(self, sender, command):
+        parts = command.split()
+        if len(parts) < 2:
+            self.send_message(f"PRIVMSG {self.channel} :Usage: !unban <nickname>")
+            return
+        target = parts[1]
+        self.send_message(f"MODE {self.channel} -b {target}")
+        self.send_message(f"PRIVMSG {self.channel} :{target} has been unbanned from {self.channel}")
+
+    def handle_unmute_command(self, sender, command):
+        parts = command.split()
+        if len(parts) < 2:
+            self.send_message(f"PRIVMSG {self.channel} :Usage: !unmute <nickname>")
+            return
+        target = parts[1]
+        self.send_message(f"MODE {self.channel} -m {target}")
+        self.send_message(f"PRIVMSG {self.channel} :{target} has been unmuted in {self.channel}")
+
     def handle_poll_command(self, sender, command):
         parts = command.split(' ', 1)
         if len(parts) < 2 or ';' not in parts[1]:

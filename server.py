@@ -88,10 +88,6 @@ class Server:
         elif command == "NAMES":
             channel_name = parts[1]
             self.send_names_list(client, channel_name)
-        elif command == "KICK":
-            channel_name = parts[1]
-            target_nickname = parts[2]
-            self.kick_user(client, channel_name, target_nickname)
         elif command == "MODE":
             self.handle_mode(client, parts[1:])
 
@@ -117,19 +113,36 @@ class Server:
 
     def set_nick(self, client, nickname):
         original_nickname = nickname
-        while nickname in self.nicknames:
+        current_nickname = client.nickname
+
+        if current_nickname == nickname:
+            client.send(f":{self.host} {NumericReplies.ERR_NICKNAMEINUSE.value} {client.nickname} {nickname} NOTICE * :You already have that nick\n")
+            return
+        
+        print(f"DEBUG: Current nicknames: {self.nicknames}")
+        print(f"DEBUG: Client's current nickname: {client.nickname}")
+
+        while nickname in self.nicknames and nickname != current_nickname:
+            client.send(f":{self.host} {NumericReplies.ERR_NICKNAMEINUSE.value} {client.nickname} {nickname} nick is already in use generating a new one \n")
             nickname = f"{original_nickname}{random.randint(1000, 9999)}"
-        if client.nickname in self.nicknames:
-            self.nicknames.remove(client.nickname)
+
+        if current_nickname in self.nicknames and current_nickname != nickname:
+            print(f"DEBUG: Removing old nickname '{current_nickname}' from list.")
+            self.nicknames.remove(current_nickname)
+
         self.nicknames.add(nickname)
         client.nickname = nickname
+
+        print(f"DEBUG: Nickname changed to '{nickname}'")
 
         if nickname != original_nickname:
             notice_msg = f":{self.host} NOTICE * :Your nickname was changed to {nickname} because {original_nickname} is already in use\n"
             client.send(notice_msg)
             
-        success_msg = f":{self.host} NICK :{nickname}"
+        success_msg = f":{current_nickname} NICK :{nickname}\n"
         client.send(success_msg)
+
+        print(f"DEBUG: Updated nicknames: {self.nicknames}")
 
     def set_user(self, client, user_details):
         if not client.nickname:
@@ -209,37 +222,6 @@ class Server:
             else:
                 client.send(format_no_such_nick_message(self.host, client.nickname, recipient))
 
-    def kick_user(self, client, channel_name, target_nickname):
-        print(f"Attempting to kick {target_nickname} from {channel_name} by {client.nickname}")
-        if channel_name in self.channels:
-            channel = self.channels[channel_name]
-            target_client = None
-            for member in channel.members:
-                if member.nickname == target_nickname:
-                    target_client = member
-                    break
-
-            if target_client:
-                print(f"Found target client {target_client.nickname}")
-                if client.nickname == target_client.nickname:
-                    print(f"User is attempting to kick themseleves. Aborting the kick..")
-                    client.send(f":{self.host} {NumericReplies.ERR_NOPRIVILEGES.value} {client.nickname} {channel_name} :You cannot kick yourself\n")
-                    return
-                
-                kick_msg = f":{client.nickname} KICK {channel_name} {target_nickname} :Kicked by {client.nickname}"
-                channel.broadcast(kick_msg)
-                channel.part(target_client)
-                target_client.send(kick_msg)
-
-                if target_client.nickname == self.bot_nickname:
-                    print(f"Bot kicked from {channel_name}. Rejoining....")
-                    self.join_channel(target_client, channel_name)
-            else:
-                print(f"Target client {target_nickname} not found in {channel_name}")
-                client.send(f":self.host {NumericReplies.ERR_NOSUCHNICK.value} {client.nickname} {target_nickname} :No such nick/channel\n")
-        else:
-            print(f"Channel {channel_name} not found")
-            client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
     
     def handle_mode(self, client, parts):
         if len(parts) < 2:
@@ -253,45 +235,45 @@ class Server:
             client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
             return
 
-        channel = self.channels[channel_name]
-        if mode == "+b" and target:
-            self.ban_user(client, channel, target)
-        elif mode == "-b" and target:
-            self.unban_user(client, channel, target)
-        elif mode == "+m" and target:
-            self.mute_user(client, channel, target)
-        elif mode == "-m" and target:
-            self.unmute_user(client, channel, target)
+        # channel = self.channels[channel_name]
+        # if mode == "+b" and target:
+        #     self.ban_user(client, channel, target)
+        # elif mode == "-b" and target:
+        #     self.unban_user(client, channel, target)
+        # elif mode == "+m" and target:
+        #     self.mute_user(client, channel, target)
+        # elif mode == "-m" and target:
+        #     self.unmute_user(client, channel, target)
     
-    def ban_user(self, client, channel, target):
-        if not channel.is_banned(target):
-            channel.ban_user(target)
-            channel.broadcast(format_mode_message(self.host, client.nickname, channel.name, "+b", target))
+    # def ban_user(self, client, channel, target):
+    #     if not channel.is_banned(target):
+    #         channel.ban_user(target)
+    #         channel.broadcast(format_mode_message(self.host, client.nickname, channel.name, "+b", target))
 
-            target_client = None
-            for member in channel.members:
-                if member.nickname == target:
-                    target_client = member
-                    break
+    #         target_client = None
+    #         for member in channel.members:
+    #             if member.nickname == target:
+    #                 target_client = member
+    #                 break
 
-            if target_client:
-                self.part_channel(target_client, channel.name)
+    #         if target_client:
+    #             self.part_channel(target_client, channel.name)
 
 
-    def unban_user(self, client, channel, target):
-        if channel.is_banned(target):
-            channel.unban_user(target)
-            channel.broadcast(format_mode_message(self.host, client.nickname, channel.name, "-b", target))
+    # def unban_user(self, client, channel, target):
+    #     if channel.is_banned(target):
+    #         channel.unban_user(target)
+    #         channel.broadcast(format_mode_message(self.host, client.nickname, channel.name, "-b", target))
 
-    def mute_user(self, client, channel, target):
-        if not channel.is_muted(target):
-            channel.mute_user(target)
-            channel.broadcast(format_mode_message(self.host, client.nickname, channel.name, "+m", target))
+    # def mute_user(self, client, channel, target):
+    #     if not channel.is_muted(target):
+    #         channel.mute_user(target)
+    #         channel.broadcast(format_mode_message(self.host, client.nickname, channel.name, "+m", target))
     
-    def unmute_user(self, client, channel, target):
-        if channel.is_muted(target):
-            channel.unmute_user(target)
-            channel.broadcast(format_mode_message(self.host, client.nickname, channel.name, "-m", target))
+    # def unmute_user(self, client, channel, target):
+    #     if channel.is_muted(target):
+    #         channel.unmute_user(target)
+    #         channel.broadcast(format_mode_message(self.host, client.nickname, channel.name, "-m", target))
     
     def disconnect_client(self, client):
         if client.nickname in self.nicknames:

@@ -17,6 +17,7 @@ class Bot:
         self.active_poll = None
         self.poll_votes = {}
         self.poll_voters = set()  # New set to keep track of voters
+        self.is_muted = False
 
     def connect(self):
         self.sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM) 
@@ -31,6 +32,10 @@ class Bot:
         self.listen_for_messages()
 
     def send_message(self, message):
+        if self.is_muted:
+            self.sock.sendall((f"PRIVMSG {self.channel} :Bot is muted, unmute the bot to talk!\r\n").encode())
+            print(f"Attempted to send message while muted: {message}")
+            return
         self.sock.sendall((message + "\r\n").encode())
         print(f'\nSent: {message}')
 
@@ -135,8 +140,7 @@ class Bot:
         elif command.startswith('mute'):
             self.handle_mute_command(sender, command)
         elif command.startswith('unmute'):
-            self.handle_unmute_command(sender, command) 
-    
+            self.handle_unmute_command(sender, command)
 
     def handle_kick_command(self, sender, command):
         parts = command.split(' ', 1)
@@ -145,8 +149,9 @@ class Bot:
             return
 
         target = parts[1].strip()
+        print(f"Attempting to kick {target} from {self.channel} by {sender}")
         self.send_message(f"KICK {self.channel} {target} :Kicked by {sender}")
-    
+        
     def handle_ban_command(self, sender, command):
         parts = command.split()
         if len(parts) < 2:
@@ -162,8 +167,10 @@ class Bot:
             self.send_message(f"PRIVMSG {self.channel} :Usage: !mute <nickname>")
             return
         target = parts[1]
-        self.send_message(f"MODE {self.channel} +m {target}")
-        self.send_message(f"PRIVMSG {self.channel} :{target} has been muted in {self.channel}")
+        if target == self.name:
+            self.is_muted = True
+            self.send_message(f"MODE {self.channel} +m {target}")
+            # self.send_message(f"PRIVMSG {self.channel} :{target} has been muted in {self.channel}")
 
     def handle_unban_command(self, sender, command):
         parts = command.split()
@@ -180,43 +187,50 @@ class Bot:
             self.send_message(f"PRIVMSG {self.channel} :Usage: !unmute <nickname>")
             return
         target = parts[1]
-        self.send_message(f"MODE {self.channel} -m {target}")
-        self.send_message(f"PRIVMSG {self.channel} :{target} has been unmuted in {self.channel}")
+        if target == self.name:
+            self.is_muted = False
+            self.send_message(f"MODE {self.channel} -m {target}")
+            self.send_message(f"PRIVMSG {self.channel} :{target} has been unmuted in {self.channel}")
 
     def handle_poll_command(self, sender, command):
         parts = command.split(' ', 1)
         if len(parts) < 2 or ';' not in parts[1]:
             self.send_message(f"PRIVMSG {self.channel} :Invalid poll format. Usage: !poll \"<question>\" <option1>;<option2>;<option3>...;")
             return
+        try:
+            first_quote_index = parts[1].index('"')
+            second_quote_index = parts[1].index('"', first_quote_index + 1)
+            question = parts[1][first_quote_index + 1:second_quote_index].strip()
+            options_part = parts[1][second_quote_index + 1:].strip()
+            options = [opt.strip() for opt in options_part.split(';') if opt.strip()]
 
-        question, options = parts[1].split('"', 2)
-        question = question.strip()
-        options = [opt.strip() for opt in options.split(';') if opt.strip()]
+            if len(options) < 2:
+                self.send_message(f"PRIVMSG {self.channel} :Error: A poll must have at least 2 options.")
+                return
 
-        if len(options) < 2:
-            self.send_message(f"PRIVMSG {self.channel} :Error: A poll must have at least 2 options.")
-            return
+            if self.active_poll:
+                self.send_message(f"PRIVMSG {self.channel} :There is already an active poll. Wait for it to end.")
+                return
+
+            self.active_poll = {
+                'question': question,
+                'options': options,
+                'start_time': time.time(),
+                'duration': 45
+            }
+            self.poll_votes = {}
+            self.poll_voters = set()  # Reset voters for new poll
+
+            poll_message = f"Poll started by {sender}\nQuestion:\"{question}\"\nOptions: {', '.join(options)}\nType !vote <option> to vote.\nTime limit: 45 seconds."
+            for msg in poll_message.split('\n'):
+                self.send_message(f"PRIVMSG {self.channel} :{msg}")
         
-        if self.active_poll:
-            self.send_message(f"PRIVMSG {self.channel} :There is already an active poll. Wait for it to end.")
+            # Start a timer to end the poll
+            threading.Timer(45, self.handle_end_poll, args=[self.name]).start()
+
+        except ValueError:
+            self.send_message(f"PRIVMSG {self.channel} :Invalid poll format. Usage: !poll \"<question>\" <option1>;<option2>;<option3>...;")
             return
-
-        self.active_poll = {
-            'question': question,
-            'options': options,
-            'start_time': time.time(),
-            'duration': 60
-        }
-        self.poll_votes = {}
-        self.poll_voters = set()  # Reset voters for new poll
-
-
-        poll_message = f"Poll started by {sender}\nQuestion:\"{question}\"\nOptions: {', '.join(options)}\nType !vote <option> to vote.\nTime limit: 45 seconds."
-        for msg in poll_message.split('\n'):
-            self.send_message(f"PRIVMSG {self.channel} :{msg}")
-    
-        # Start a timer to end the poll
-        threading.Timer(45, self.handle_end_poll, args=[self.name]).start()
 
     def handle_end_poll(self, sender):
         if not self.active_poll:

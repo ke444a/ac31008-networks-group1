@@ -119,13 +119,17 @@ class Server:
         original_nickname = nickname
         while nickname in self.nicknames:
             nickname = f"{original_nickname}{random.randint(1000, 9999)}"
-        
-        client.nickname = nickname
+        if client.nickname in self.nicknames:
+            self.nicknames.remove(client.nickname)
         self.nicknames.add(nickname)
+        client.nickname = nickname
 
         if nickname != original_nickname:
             notice_msg = f":{self.host} NOTICE * :Your nickname was changed to {nickname} because {original_nickname} is already in use\n"
             client.send(notice_msg)
+            
+        success_msg = f":{self.host} NICK :{nickname}"
+        client.send(success_msg)
 
     def set_user(self, client, user_details):
         if not client.nickname:
@@ -148,6 +152,10 @@ class Server:
             self.channels[channel_name] = Channel(channel_name)
 
         channel = self.channels[channel_name]
+        if channel.is_banned(client.nickname):
+            client.send(format_banned_from_channel_message(self.host, client.nickname, channel_name))
+            return
+
         channel.join(client)
 
         join_msg = f":{client.nickname} JOIN {channel_name}"
@@ -179,7 +187,9 @@ class Server:
         if recipient.startswith("#"):
             if recipient in self.channels:
                 channel = self.channels[recipient]
-                if client in channel.members:
+                if channel.is_muted(client.nickname) or channel.is_banned(client.nickname):
+                    client.send(f":{self.host} 404 {client.nickname} {recipient} :Cannot send to channel (You're muted)")
+                elif client in channel.members:
                     if client.nickname in channel.banned_users:
                         client.send(f":{self.host} 404 {client.nickname} {recipient} :Cannot send to channel (You're banned)")
                     elif client.nickname in channel.muted_users:
@@ -260,6 +270,8 @@ class Server:
         if not channel.is_banned(target):
             channel.ban_user(target)
             channel.broadcast(format_mode_message(self.host, client.nickname, channel.name, "+b", target))
+            if target in channel.members:
+                self.part_channel(target, channel.name)
 
     def unban_user(self, client, channel, target):
         if channel.is_banned(target):

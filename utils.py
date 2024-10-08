@@ -5,6 +5,7 @@ class NumericReplies(Enum):
     RPL_WELCOME = "001"
     RPL_YOURHOST = "002"
     RPL_MYINFO = "004"
+    RPL_CHANNELMODEIS = "324"
     RPL_NOTOPIC = "331"
     RPL_TOPIC = "332"
     RPL_NAMREPLY = "353"
@@ -109,5 +110,5 @@ def format_no_privileges_message(host, nick):
     return f":{host} {NumericReplies.ERR_NOPRIVILEGES.value} {nick} :Permission Denied\n"
 
 def format_mode_message(host, nick, channel, mode_symbol, target):
-    return f":{host} {NumericReplies.RPL_MODE.value} {nick} {channel} {mode_symbol} {target}\n"
+    return f":{host} {NumericReplies.RPL_CHANNELMODEIS.value} {nick} {channel} {mode_symbol} {target}\n"
 

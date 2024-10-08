@@ -230,7 +230,9 @@ class Bot:
 
         users_in_channel = self.get_users_in_channel(sender)
 
-        if target and target in users_in_channel:
+        if target == self.name:
+            slap_msg = f"Ugh, {sender}... You're so bad at this game..."
+        elif target and target in users_in_channel:
             slap_msg = f"{sender} slaps {target} with a trout!"
         elif target:
             slap_msg = f"{sender} slaps themselves with a trout!"

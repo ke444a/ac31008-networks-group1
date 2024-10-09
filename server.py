@@ -176,8 +176,6 @@ class Server:
         channel.join(client)
         join_msg = f":{client.nickname} JOIN {channel_name}"
         channel.broadcast(join_msg)
-
-        # client.send(f":{client.nickname} JOIN {channel_name}")
         self.send_names_list(client, channel_name)
 
     def part_channel(self, client, channel_name):

@@ -167,10 +167,10 @@ class Bot:
             self.send_message(f"PRIVMSG {self.channel} :Usage: !mute <nickname>")
             return
         target = parts[1]
+        self.send_message(f"MODE {self.channel} +m {target}")
+        self.send_message(f"PRIVMSG {self.channel} :{target} has been muted in {self.channel}")
         if target == self.name:
             self.is_muted = True
-            self.send_message(f"MODE {self.channel} +m {target}")
-            # self.send_message(f"PRIVMSG {self.channel} :{target} has been muted in {self.channel}")
 
     def handle_unban_command(self, sender, command):
         parts = command.split()
@@ -187,10 +187,10 @@ class Bot:
             self.send_message(f"PRIVMSG {self.channel} :Usage: !unmute <nickname>")
             return
         target = parts[1]
+        self.send_message(f"MODE {self.channel} -m {target}")
+        self.send_message(f"PRIVMSG {self.channel} :{target} has been unmuted in {self.channel}")
         if target == self.name:
             self.is_muted = False
-            self.send_message(f"MODE {self.channel} -m {target}")
-            self.send_message(f"PRIVMSG {self.channel} :{target} has been unmuted in {self.channel}")
 
     def handle_poll_command(self, sender, command):
         parts = command.split(' ', 1)

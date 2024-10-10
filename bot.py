@@ -7,16 +7,16 @@ from utils import NumericReplies
 
 class Bot:
     def __init__(self, host, port, name, channel):
-        self.host = host
-        self.port = port
-        self.name = name
-        self.channel = channel
+        self.host = host if host else '::1'
+        self.port = port if port else 6667
+        self.name = name if name else "SuperBot"
+        self.channel = channel if channel else "#hello"
         self.sock = None
         self.topic = None
         self.channel_members = [] 
         self.active_poll = None
         self.poll_votes = {}
-        self.poll_voters = set()  # New set to keep track of voters
+        self.poll_voters = set()  
         self.is_muted = False
 
     def connect(self):
@@ -26,9 +26,7 @@ class Bot:
 
         self.send_message(f"NICK {self.name}")
         self.send_message(f"USER {self.name} 0 * :{self.name}")
-
         self.join_channel(self.channel)
-
         self.listen_for_messages()
 
     def send_message(self, message):
@@ -69,7 +67,6 @@ class Bot:
 
     def handle_server_response(self, response):
         parts = response.split()
-        
         if len(parts) > 3 and parts[1] == NumericReplies.RPL_NAMREPLY.value: 
             self.channel_members = []
             names = parts[4:]  
@@ -80,39 +77,29 @@ class Bot:
                     self.channel_members.append(name)
                     
             print(f"\nUsers in {self.channel}: {self.channel_members}")
-
-        elif len(parts) > 3 and parts[1] == NumericReplies.RPL_ENDOFNAMES.value: 
-            pass
-
         elif len(parts) > 3 and parts[1] == NumericReplies.RPL_TOPIC.value:
             topic = ' '.join(parts[4:])[1:]
             self.send_message(f"PRIVMSG {self.channel} :Current topic for {self.channel}: {topic}")
             print({topic})
-        
         elif len(parts) > 3 and parts[1] == NumericReplies.RPL_NOTOPIC.value:
             self.send_message(f"PRIVMSG {self.channel} :No topic is set for {self.channel}")
-
         elif len(parts) > 3 and parts[1] == 'PRIVMSG':
+            # Handle private messages sent to the bot or commands prefixed with '!'
             sender = parts[0].split('!')[0][1:]
             message = ' '.join(parts[3:])[1:]
-
             if message.startswith('!'):
                 command = message[1:]
                 self.handle_command(sender, command)
-
-            if len(parts) > 3 and parts[1] == 'PRIVMSG' and parts[2] == self.name:
+            elif parts[2] == self.name:
                 private_message = ' '.join(parts[3:])[1:]
                 self.respond_to_private_message(sender, private_message)
-        
         elif len(parts) > 3 and parts[1] == 'MODE':
             channel = parts[2]
             mode = parts[3]
             target = parts[4] if len(parts) > 4 else None
             self.handle_mode_change(channel, mode, target)
-
         if len(parts) <= 3 and parts[1] == 'JOIN':
             self.send_message(f"NAMES {self.channel}")
-        
         if len(parts) > 3 and parts[1] == 'TOPIC':
             if parts[3] == ':No':
                 self.topic = "No topic is set."
@@ -124,25 +111,25 @@ class Bot:
             self.send_message(f"PRIVMSG {self.channel} :Hello, {sender}!")
         elif command.startswith('slap'):
             target = command.split()[1] if len(command.split()) > 1 else None
-            self.slap_user(sender, target)
+            self.handle_slap_user(sender, target)
         elif command.startswith('topic'):
-            self.handle_topic_command(sender, command)
+            self.handle_set_topic(sender, command)
         elif command.startswith('poll'):
-            self.handle_poll_command(sender, command)
+            self.handle_create_poll(sender, command)
         elif command.startswith('vote'):
-            self.handle_vote_command(sender, command)
+            self.handle_vote(sender, command)
         elif command.startswith('kick'):
-            self.handle_kick_command(sender, command)
+            self.handle_kick_user(sender, command)
         elif command.startswith('ban'):
-            self.handle_ban_command(sender, command)
+            self.handle_ban_user(sender, command)
         elif command.startswith('unban'):
-            self.handle_unban_command(sender, command)
+            self.handle_unban_user(sender, command)
         elif command.startswith('mute'):
-            self.handle_mute_command(sender, command)
+            self.handle_mute_user(sender, command)
         elif command.startswith('unmute'):
-            self.handle_unmute_command(sender, command)
+            self.handle_unmute_user(sender, command)
 
-    def handle_kick_command(self, sender, command):
+    def handle_kick_user(self, sender, command):
         parts = command.split(' ', 1)
         if len(parts) < 2:
             self.send_message(f"PRIVMSG {self.channel} :Invalid kick format. Usage: !kick <nickname>")
@@ -152,7 +139,7 @@ class Bot:
         print(f"Attempting to kick {target} from {self.channel} by {sender}")
         self.send_message(f"KICK {self.channel} {target} :Kicked by {sender}")
         
-    def handle_ban_command(self, sender, command):
+    def handle_ban_user(self, sender, command):
         parts = command.split()
         if len(parts) < 2:
             self.send_message(f"PRIVMSG {self.channel} :Usage: !ban <nickname>")
@@ -161,7 +148,7 @@ class Bot:
         self.send_message(f"MODE {self.channel} +b {target}")
         self.send_message(f"PRIVMSG {self.channel} :{target} has been banned from {self.channel}")
     
-    def handle_mute_command(self, sender, command):
+    def handle_mute_user(self, sender, command):
         parts = command.split()
         if len(parts) < 2:
             self.send_message(f"PRIVMSG {self.channel} :Usage: !mute <nickname>")
@@ -172,7 +159,7 @@ class Bot:
         if target == self.name:
             self.is_muted = True
 
-    def handle_unban_command(self, sender, command):
+    def handle_unban_user(self, sender, command):
         parts = command.split()
         if len(parts) < 2:
             self.send_message(f"PRIVMSG {self.channel} :Usage: !unban <nickname>")
@@ -181,7 +168,7 @@ class Bot:
         self.send_message(f"MODE {self.channel} -b {target}")
         self.send_message(f"PRIVMSG {self.channel} :{target} has been unbanned from {self.channel}")
 
-    def handle_unmute_command(self, sender, command):
+    def handle_unmute_user(self, sender, command):
         parts = command.split()
         if len(parts) < 2:
             self.send_message(f"PRIVMSG {self.channel} :Usage: !unmute <nickname>")
@@ -192,7 +179,7 @@ class Bot:
         if target == self.name:
             self.is_muted = False
 
-    def handle_poll_command(self, sender, command):
+    def handle_create_poll(self, sender, command):
         parts = command.split(' ', 1)
         if len(parts) < 2 or ';' not in parts[1]:
             self.send_message(f"PRIVMSG {self.channel} :Invalid poll format. Usage: !poll \"<question>\" <option1>;<option2>;<option3>...;")
@@ -251,7 +238,7 @@ class Bot:
         self.poll_votes = {}
         self.poll_voters = set()
     
-    def handle_vote_command(self, sender, command):
+    def handle_vote(self, sender, command):
         if not self.active_poll:
             self.send_message(f"PRIVMSG {self.channel} :No active poll.")
             return
@@ -286,7 +273,7 @@ class Bot:
         elif mode == '-m' and target:
             print(f"{target} has been unmuted in {channel}")
 
-    def handle_topic_command(self, sender, command):
+    def handle_set_topic(self, sender, command):
         parts = command.split(' ', 1)
 
         if len(parts) == 1:
@@ -296,7 +283,7 @@ class Bot:
             self.send_message(f"TOPIC {self.channel} :{new_topic}")
             print(f"Set new topic for {self.channel}: {new_topic}")
 
-    def slap_user(self, sender, target):
+    def handle_slap_user(self, sender, target):
         self.send_message(f"NAMES {self.channel}")
 
         users_in_channel = self.get_users_in_channel(sender)
@@ -342,10 +329,10 @@ class Bot:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--host', type=str, required=True)
-    parser.add_argument('--port', type=int, required=True)
-    parser.add_argument('--name', type=str, required=True)
-    parser.add_argument('--channel', type=str, required=True)
+    parser.add_argument('--host', type=str)
+    parser.add_argument('--port', type=int)
+    parser.add_argument('--name', type=str)
+    parser.add_argument('--channel', type=str)
 
     args = parser.parse_args()
 

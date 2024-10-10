@@ -21,6 +21,7 @@ class NumericReplies(Enum):
 def log_message(client, message):
     print(f"\nSent to <{client.nickname}>: {message.strip()}")
 
+# Class representing a client
 class Client:
     def __init__(self, writer, nickname=None, username=None):
         self.writer = writer
@@ -41,6 +42,7 @@ class Client:
     def get_info(self):
         return f"{self.nickname} ({self.username})"
 
+# Class representing a channel
 class Channel:
     def __init__(self, name):
         self.name = name
@@ -81,6 +83,8 @@ class Channel:
     def is_muted(self, client):
         return client in self.muted_users
 
+
+# Formatting messages
 
 def format_welcome_message(host, nick):
     return f":{host} {NumericReplies.RPL_WELCOME.value} {nick} :Welcome to the IRC server!\n"

@@ -62,7 +62,8 @@ class Server:
         command = parts[0].upper()
 
         if command == "NICK":
-            self.set_nick(client, parts[1])
+            new_nick = parts[1]
+            self.set_nick(client, new_nick)
         elif command == "USER":
             self.set_user(client, parts[1:])
         elif command == "JOIN":
@@ -93,7 +94,7 @@ class Server:
             target_nickname = parts[2]
             self.kick_user(client, channel_name, target_nickname)
         elif command == "MODE":
-            self.handle_mode(client, parts[1:])
+            self.set_mode(client, parts[1:])
 
     def set_topic(self, client, channel_name, topic):
         if channel_name in self.channels:
@@ -213,7 +214,7 @@ class Server:
                 client.send(format_not_on_channel_message(self.host, client.nickname, recipient))
         else:
             target_client = None
-            for addr, irc_client in self.clients.items():
+            for irc_client in self.clients.values():
                 if irc_client.nickname == recipient:
                     target_client = irc_client
                     break
@@ -225,7 +226,7 @@ class Server:
                 client.send(format_no_such_nick_message(self.host, client.nickname, recipient))
 
     
-    def handle_mode(self, client, parts):
+    def set_mode(self, client, parts):
         if len(parts) < 2:
             return
 

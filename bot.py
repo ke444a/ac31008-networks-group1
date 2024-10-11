@@ -8,7 +8,7 @@ from utils import NumericReplies
 # Class representing the bot functionality
 class Bot:
     def __init__(self, host, port, name, channel):
-        self.host = host if host else '::1'
+        self.host = host if host else 'fc00:1337::17'
         self.port = port if port else 6667
         self.name = name if name else "SuperBot"
         self.channel = channel if channel else "#hello"

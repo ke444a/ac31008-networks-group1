@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from utils import *
 from utils import Channel, Client
 
+# Class that handles the server logic
 class Server:
     def __init__(self, host='::1', port=6667):
         self.host = host
@@ -13,12 +14,21 @@ class Server:
         self.clients = {}
         self.channels = {}
         self.nicknames = set()
-        self.check_interval = 10
-        self.bot_nickname = "SuperBot"
+        # Bot details
+        self.bot_nickname = None
+        # Secret key used to authenticate the bot
+        self.bot_secret_key = "BOT_KEY"
         self.banned_users = {}
         self.muted_users = {}
+        # Time interval to check for inactive clients
+        self.check_interval = 10
+        # List of commands that the server recognizes as client activity
+        self.recognized_user_commands = ["NICK", "USER", "JOIN", "PART", "PRIVMSG", "QUIT", "TOPIC", "NAMES", "KICK", "MODE"]
+    
+
 
     async def handle_client(self, reader, writer):
+        # Retrieve the client's address to identify the client's source of connection
         addr = writer.get_extra_info('peername')
         client = Client(writer)
         client.last_active = datetime.now()
@@ -32,8 +42,10 @@ class Server:
                 message = data.decode().strip()
 
                 if message:
-                    client.last_active = datetime.now()
-                    print(client.last_active)
+                    # Update the client's last active time if they send a command
+                    command = message.split()[0].upper()
+                    if command in self.recognized_user_commands:
+                        client.last_active = datetime.now()
                     print(f"\nReceived from <{client.nickname}>: {message}")
                     self.process_message(message, client)
 
@@ -42,22 +54,30 @@ class Server:
         except asyncio.CancelledError:
             pass
         finally:
-            self.disconnect_client(client)
+            await self.disconnect_client(client)
 
     async def check_inactive_clients(self):
+        # Check for inactive clients every 10 seconds
         while True:
             await asyncio.sleep(self.check_interval)
             if not self.clients:
-                break
+                continue
             now = datetime.now()
-            for addr, client in list(self.clients.items()):
+            clients_to_disconnect = []
+            # Iterate over all clients and check if they are inactive for 1 minute
+            for client in self.clients.values():
+                # Skip the bot
                 if client.nickname == self.bot_nickname:
                     continue
-                if now - client.last_active > timedelta(minutes=1):
+                if now - client.last_active > timedelta(seconds=60):
                     print(f"Client {client.nickname} inactive for 1 minute. Disconnecting.")
-                    self.disconnect_client(client)
+                    clients_to_disconnect.append(client)
+            
+            for client in clients_to_disconnect:
+                await self.disconnect_client(client)
             
     def process_message(self, message, client):
+        # Processing the commands from the client
         parts = message.split()
         command = parts[0].upper()
 
@@ -95,6 +115,22 @@ class Server:
             self.kick_user(client, channel_name, target_nickname)
         elif command == "MODE":
             self.set_mode(client, parts[1:])
+        elif command == "BOT_AUTH":
+            print(f"DEBUG: Received BOT_AUTH command from {client.nickname}")
+            self.authenticate_bot(client, parts[1:])
+    
+    def authenticate_bot(self, client, auth_parts):
+        # Authenticate the bot using the secret key to distinguish it from regular clients
+        if len(auth_parts) != 1:
+            return
+        
+        secret = auth_parts[0]
+        if secret == self.bot_secret_key:
+            self.bot_nickname = client.nickname
+            client.send(f":{self.host} 900 {client.nickname} :BOT_AUTH_SUCCESS {client.nickname}")
+        else:
+            client.send(f":{self.host} NOTICE {client.nickname} :Bot authentication failed")
+
 
     def set_topic(self, client, channel_name, topic):
         if channel_name in self.channels:
@@ -102,7 +138,6 @@ class Server:
             channel.topic = topic
             topic_msg = f":{client.nickname} TOPIC {channel_name} :{topic}"
             channel.broadcast(topic_msg)
-            # client.send(f":{self.host} TOPIC {channel_name} :{topic}")
         else:
             client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
 
@@ -127,6 +162,7 @@ class Server:
         print(f"DEBUG: Current nicknames: {self.nicknames}")
         print(f"DEBUG: Client's current nickname: {client.nickname}")
 
+        # Generate a new nickname if the desired one is already in use
         while nickname in self.nicknames and nickname != current_nickname:
             client.send(f":{self.host} {NumericReplies.ERR_NICKNAMEINUSE.value} {client.nickname} {nickname} nick is already in use generating a new one \n")
             nickname = f"{original_nickname}{random.randint(1000, 9999)}"
@@ -137,16 +173,13 @@ class Server:
 
         self.nicknames.add(nickname)
         client.nickname = nickname
-
         print(f"DEBUG: Nickname changed to '{nickname}'")
-
         if nickname != original_nickname:
             notice_msg = f":{self.host} NOTICE * :Your nickname was changed to {nickname} because {original_nickname} is already in use\n"
             client.send(notice_msg)
-            
+        
         success_msg = f":{current_nickname} NICK :{nickname}\n"
         client.send(success_msg)
-
         print(f"DEBUG: Updated nicknames: {self.nicknames}")
 
     def set_user(self, client, user_details):
@@ -155,6 +188,7 @@ class Server:
             client.send(error_msg)
             return
 
+        # Sending welcome messages to the client
         client.username = ' '.join(user_details)
         client.send(format_welcome_message(self.host, client.nickname))
         client.send(format_host_message(self.host, client.nickname))
@@ -166,6 +200,7 @@ class Server:
             client.send(error_msg)
             return
 
+        # Create a new channel if it doesn't exist
         if channel_name not in self.channels:
             self.channels[channel_name] = Channel(channel_name)
 
@@ -200,6 +235,7 @@ class Server:
         if recipient.startswith("#"):
             if recipient in self.channels:
                 channel = self.channels[recipient]
+                # Identify the channel and verify that the client is not muted or banned
                 if channel.is_muted(client.nickname) or channel.is_banned(client.nickname):
                     client.send(f":{self.host} 404 {client.nickname} {recipient} :Cannot send to channel (You're muted)")
                 elif client in channel.members:
@@ -213,12 +249,14 @@ class Server:
             else:
                 client.send(format_not_on_channel_message(self.host, client.nickname, recipient))
         else:
+            # Find the target cient by their nickname
             target_client = None
             for irc_client in self.clients.values():
                 if irc_client.nickname == recipient:
                     target_client = irc_client
                     break
-
+            
+            # Send the message to the target client if found
             if target_client:
                 priv_msg = f":{client.nickname} PRIVMSG {recipient} :{msg}"
                 target_client.send(priv_msg)
@@ -233,11 +271,11 @@ class Server:
         channel_name = parts[0]
         mode = parts[1]
         target = parts[2] if len(parts) > 2 else None
-
         if channel_name not in self.channels:
             client.send(format_not_on_channel_message(self.host, client.nickname, channel_name))
             return
 
+        # Process the mode change based on the mode flag
         channel = self.channels[channel_name]
         if mode == "+b" and target:
             self.ban_user(client, channel, target)
@@ -252,6 +290,7 @@ class Server:
         print(f"Attempting to kick {target_nickname} from {channel_name} by {client.nickname}")
         if channel_name in self.channels:
             channel = self.channels[channel_name]
+            # Identify the target client by their nickname
             target_client = None
             for member in channel.members:
                 if member.nickname == target_nickname:
@@ -269,7 +308,6 @@ class Server:
                 channel.broadcast(kick_msg)
                 channel.part(target_client)
                 target_client.send(kick_msg)
-
                 if target_client.nickname == self.bot_nickname:
                     print(f"Bot kicked from {channel_name}. Rejoining....")
                     self.join_channel(target_client, channel_name)
@@ -290,7 +328,8 @@ class Server:
                 if member.nickname == target:
                     target_client = member
                     break
-
+            
+            # If the banned user is in the channel, remove them
             if target_client:
                 self.part_channel(target_client, channel.name)
 
@@ -310,25 +349,24 @@ class Server:
             channel.unmute_user(target)
             channel.broadcast(format_mode_message(self.host, client.nickname, channel.name, "-m", target))
     
-    def disconnect_client(self, client):
+    async def disconnect_client(self, client):
         if client.nickname in self.nicknames:
             self.nicknames.remove(client.nickname)
 
-        channels_to_update = list(self.channels.values())
-        for channel in channels_to_update:
+        for channel in self.channels.values():
             if client in channel.members:
                 part_msg = f":{client.nickname} PART {channel.name} :Disconnected"
                 channel.broadcast(part_msg, exclude=client)
                 channel.part(client)
-
                 if channel.is_empty():
+                    # If the disconnected client was the last member of the channel, remove the channel
                     del self.channels[channel.name]
 
+        # Close the client's connection
         if client.writer:
             try:
                 client.writer.close()
-                asyncio.create_task(self.wait_closed(client.writer))
-
+                await client.writer.wait_closed()
             except Exception as e:
                 print(f"Error closing connection for {client.nickname}: {e}")
 
@@ -337,11 +375,12 @@ class Server:
             if stored_client == client:
                 addr_to_remove = addr
                 break
-
+        # Remove the client from the clients dictionary
         if addr_to_remove:
             del self.clients[addr_to_remove]
 
     async def wait_closed(self, writer):
+        # Wait for the writer to close
         try:
             await writer.wait_closed()
         except ConnectionResetError as e:
@@ -350,6 +389,7 @@ class Server:
             print(f"Unexpected error during close: {e}")
 
     def send_names_list(self, client, channel_name):
+        # Retrieve the channel and send the list of names to the client
         if channel_name in self.channels:
             channel = self.channels[channel_name]
             names_list = " ".join([member.nickname for member in channel.members])
@@ -361,6 +401,7 @@ class Server:
     async def start(self):
         server = await asyncio.start_server(self.handle_client, self.host, self.port, family=socket.AF_INET6)
         print(f'\nServing listening on {self.host}:{self.port} ...')
+        # Task to check for inactive clients
         asyncio.create_task(self.check_inactive_clients())
         async with server:
             await server.serve_forever()

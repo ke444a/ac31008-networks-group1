@@ -5,6 +5,7 @@ import time
 import threading
 from utils import NumericReplies
 
+# Class representing the bot functionality
 class Bot:
     def __init__(self, host, port, name, channel):
         self.host = host if host else '::1'
@@ -14,18 +15,26 @@ class Bot:
         self.sock = None
         self.topic = None
         self.channel_members = [] 
+        # Active poll data
         self.active_poll = None
         self.poll_votes = {}
         self.poll_voters = set()  
+        # Whether the bot is muted
         self.is_muted = False
+        # Secret key to authenticate the bot and distinguish it from regular clients
+        self.secret_key = "BOT_KEY"
 
     def connect(self):
         self.sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM) 
         self.sock.connect((self.host, self.port))
         print(f'\nConnecting to {self.host}:{self.port} as {self.name}...')
 
+        # Sending necessary IRC commands to register the bot
         self.send_message(f"NICK {self.name}")
         self.send_message(f"USER {self.name} 0 * :{self.name}")
+        # Custom command to authenticate the bot
+        self.send_message(f"BOT_AUTH {self.secret_key}")
+
         self.join_channel(self.channel)
         self.listen_for_messages()
 
@@ -66,6 +75,7 @@ class Bot:
             print(f"Error while closing: {e}")
 
     def handle_server_response(self, response):
+        # Parsing the server response and handling the different types of responses
         parts = response.split()
         if len(parts) > 3 and parts[1] == NumericReplies.RPL_NAMREPLY.value: 
             self.channel_members = []
@@ -80,7 +90,7 @@ class Bot:
         elif len(parts) > 3 and parts[1] == NumericReplies.RPL_TOPIC.value:
             topic = ' '.join(parts[4:])[1:]
             self.send_message(f"PRIVMSG {self.channel} :Current topic for {self.channel}: {topic}")
-            print({topic})
+            print(f"Current topic for {self.channel}: {topic}")
         elif len(parts) > 3 and parts[1] == NumericReplies.RPL_NOTOPIC.value:
             self.send_message(f"PRIVMSG {self.channel} :No topic is set for {self.channel}")
         elif len(parts) > 3 and parts[1] == 'PRIVMSG':
@@ -90,10 +100,12 @@ class Bot:
             if message.startswith('!'):
                 command = message[1:]
                 self.handle_command(sender, command)
+            # Handle private messages sent directly to the bot
             elif parts[2] == self.name:
                 private_message = ' '.join(parts[3:])[1:]
                 self.respond_to_private_message(sender, private_message)
         elif len(parts) > 3 and parts[1] == 'MODE':
+            # Handle mode changes in the channel: bans and mutes
             channel = parts[2]
             mode = parts[3]
             target = parts[4] if len(parts) > 4 else None
@@ -105,8 +117,11 @@ class Bot:
                 self.topic = "No topic is set."
             else:
                 self.topic = ' '.join(parts[3:])[1:]
+        elif len(parts) > 4 and parts[1] == '900' and 'BOT_AUTH_SUCCESS' in response:
+            self.name = parts[-1]
 
     def handle_command(self, sender, command):
+        # All the commands that the bot can handle
         if command.startswith('hello'):
             self.send_message(f"PRIVMSG {self.channel} :Hello, {sender}!")
         elif command.startswith('slap'):
@@ -139,7 +154,7 @@ class Bot:
         print(f"Attempting to kick {target} from {self.channel} by {sender}")
         self.send_message(f"KICK {self.channel} {target} :Kicked by {sender}")
         
-    def handle_ban_user(self, sender, command):
+    def handle_ban_user(self, _sender, command):
         parts = command.split()
         if len(parts) < 2:
             self.send_message(f"PRIVMSG {self.channel} :Usage: !ban <nickname>")
@@ -148,7 +163,7 @@ class Bot:
         self.send_message(f"MODE {self.channel} +b {target}")
         self.send_message(f"PRIVMSG {self.channel} :{target} has been banned from {self.channel}")
     
-    def handle_mute_user(self, sender, command):
+    def handle_mute_user(self, _sender, command):
         parts = command.split()
         if len(parts) < 2:
             self.send_message(f"PRIVMSG {self.channel} :Usage: !mute <nickname>")
@@ -159,7 +174,7 @@ class Bot:
         if target == self.name:
             self.is_muted = True
 
-    def handle_unban_user(self, sender, command):
+    def handle_unban_user(self, _sender, command):
         parts = command.split()
         if len(parts) < 2:
             self.send_message(f"PRIVMSG {self.channel} :Usage: !unban <nickname>")
@@ -168,7 +183,7 @@ class Bot:
         self.send_message(f"MODE {self.channel} -b {target}")
         self.send_message(f"PRIVMSG {self.channel} :{target} has been unbanned from {self.channel}")
 
-    def handle_unmute_user(self, sender, command):
+    def handle_unmute_user(self, _sender, command):
         parts = command.split()
         if len(parts) < 2:
             self.send_message(f"PRIVMSG {self.channel} :Usage: !unmute <nickname>")
@@ -180,25 +195,26 @@ class Bot:
             self.is_muted = False
 
     def handle_create_poll(self, sender, command):
+        # Create a poll with a question and options
         parts = command.split(' ', 1)
         if len(parts) < 2 or ';' not in parts[1]:
             self.send_message(f"PRIVMSG {self.channel} :Invalid poll format. Usage: !poll \"<question>\" <option1>;<option2>;<option3>...;")
             return
         try:
+            # Extract the question wrapped in quotes
             first_quote_index = parts[1].index('"')
             second_quote_index = parts[1].index('"', first_quote_index + 1)
             question = parts[1][first_quote_index + 1:second_quote_index].strip()
+            # Extract the options separated by semicolons
             options_part = parts[1][second_quote_index + 1:].strip()
             options = [opt.strip() for opt in options_part.split(';') if opt.strip()]
 
             if len(options) < 2:
                 self.send_message(f"PRIVMSG {self.channel} :Error: A poll must have at least 2 options.")
                 return
-
             if self.active_poll:
                 self.send_message(f"PRIVMSG {self.channel} :There is already an active poll. Wait for it to end.")
                 return
-
             self.active_poll = {
                 'question': question,
                 'options': options,
@@ -206,24 +222,24 @@ class Bot:
                 'duration': 45
             }
             self.poll_votes = {}
-            self.poll_voters = set()  # Reset voters for new poll
-
+            self.poll_voters = set() 
             poll_message = f"Poll started by {sender}\nQuestion:\"{question}\"\nOptions: {', '.join(options)}\nType !vote <option> to vote.\nTime limit: 45 seconds."
             for msg in poll_message.split('\n'):
                 self.send_message(f"PRIVMSG {self.channel} :{msg}")
         
-            # Start a timer to end the poll
+            # Start a timer to end the poll automatically
             threading.Timer(45, self.handle_end_poll, args=[self.name]).start()
 
         except ValueError:
             self.send_message(f"PRIVMSG {self.channel} :Invalid poll format. Usage: !poll \"<question>\" <option1>;<option2>;<option3>...;")
             return
 
-    def handle_end_poll(self, sender):
+    def handle_end_poll(self, _sender):
         if not self.active_poll:
             self.send_message(f"PRIVMSG {self.channel} :No active poll to end.")
             return
 
+        # Calculate the total number of votes and the percentage of votes for each option
         total_votes = sum(self.poll_votes.values())
         results = []
         for option in self.active_poll['options']:
@@ -231,6 +247,7 @@ class Bot:
             percentage = (votes / total_votes) * 100 if total_votes > 0 else 0
             results.append(f"{option}: {votes} votes ({percentage:.2f}%)")
 
+        # Send the results of the poll to the channel
         results_message = f"Poll ended for '{self.active_poll['question']}'\nResults:\n{', '.join(results)}"
         for msg in results_message.split('\n'):
             self.send_message(f"PRIVMSG {self.channel} :{msg}")
@@ -287,7 +304,6 @@ class Bot:
         self.send_message(f"NAMES {self.channel}")
 
         users_in_channel = self.get_users_in_channel(sender)
-
         if target == self.name:
             slap_msg = f"Ugh, {sender}... You're so bad at this game..."
         elif target and target in users_in_channel:
@@ -295,6 +311,7 @@ class Bot:
         elif target:
             slap_msg = f"{sender} slaps themselves with a trout!"
         else:
+            # Randomly choose a user to slap if no specific target is provided
             if users_in_channel:
                 target = random.choice([user for user in users_in_channel if user != sender and user != self.name])
                 slap_msg = f"{sender} slaps {target} with a trout!"
@@ -304,6 +321,7 @@ class Bot:
         self.send_message(f"PRIVMSG {self.channel} :{slap_msg}")
 
     def get_users_in_channel(self, sender):
+        # Get all users in the channel except the sender and the bot
         return [user for user in self.channel_members if user != sender and user != self.name]
 
     def get_channel_members(self):
@@ -317,6 +335,7 @@ class Bot:
 
     def get_joke_from_file(self):
         try:
+            # Reading jokes from a text file and selecting a random one
             with open('jokes.txt', 'r') as file:
                 jokes = file.readlines()
                 jokes = [joke.strip() for joke in jokes if joke.strip()]
@@ -328,6 +347,9 @@ class Bot:
             return "Jokes text file not found."
 
 if __name__ == "__main__":
+    # Bot can be started with the following arguments:
+    # --host <host> --port <port> --name <name> --channel <channel>
+    # Otherwise, the default values will be used
     parser = argparse.ArgumentParser()
     parser.add_argument('--host', type=str)
     parser.add_argument('--port', type=int)

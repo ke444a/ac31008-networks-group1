@@ -1,6 +1,7 @@
 from enum import Enum
 import asyncio
 
+# Numeric replies from the IRC protocol
 class NumericReplies(Enum):
     RPL_WELCOME = "001"
     RPL_YOURHOST = "002"
@@ -27,8 +28,6 @@ class Client:
         self.writer = writer
         self.nickname = nickname
         self.username = username
-        self.banned_users = set()
-        self.muted_users = set()
 
     def send(self, message):
         log_message(self, message) 

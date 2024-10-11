@@ -350,10 +350,12 @@ class Server:
             channel.broadcast(format_mode_message(self.host, client.nickname, channel.name, "-m", target))
     
     async def disconnect_client(self, client):
-        if client.nickname in self.nicknames:
+        client_nicknames = list(self.nicknames)
+        if client.nickname in client_nicknames:
             self.nicknames.remove(client.nickname)
 
-        for channel in self.channels.values():
+        channels_list = list(self.channels.values())
+        for channel in channels_list:
             if client in channel.members:
                 part_msg = f":{client.nickname} PART {channel.name} :Disconnected"
                 channel.broadcast(part_msg, exclude=client)
